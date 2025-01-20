@@ -61,9 +61,20 @@ void HydroDownloaderDlg::on_States_Downloaded()
 
         // Split the response into words (assuming each word is on a new line)
         QStringList wordList = responseString.split("\n", Qt::SkipEmptyParts);
-
+        for (int i=0; i<wordList.size(); i++)
+        {
+            QStringList line = wordList[i].split(',');
+            if (line.size() == 3)
+            {
+                State_Info stateinfo;
+                stateinfo.Name = line[1];
+                stateinfo.Code = line[0];
+                stateinfo.FIPS = line[2];
+                ui->StatescomboBox->addItem(stateinfo.Code);
+            }
+        }
         // Populate the combo box
-        ui->StatescomboBox->addItems(wordList);
+
 
         qDebug() << "Words added to combo box:" << wordList;
     } else {
@@ -78,10 +89,11 @@ void HydroDownloaderDlg::on_State_Changed()
     ui->SelectStationcomboBox->clear();
     HydroDownloader hydrodowloader;
     stations.clear();
-    stations = hydrodowloader.fetchAllStations(ui->StatescomboBox->currentText());
+    stations = hydrodowloader.fetchAllHydroStations(ui->StatescomboBox->currentText());
     for (const QString& key : stations.keys())
         ui->SelectStationcomboBox->addItem(key);
     ui->SelectStationcomboBox->setEnabled(true);
+
 }
 
 void HydroDownloaderDlg::on_Station_Selected()

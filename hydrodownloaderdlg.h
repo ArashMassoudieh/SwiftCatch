@@ -23,7 +23,7 @@ public:
 
 private:
     Ui::HydroDownloaderDlg *ui;
-    QStringList stateCodes;
+    //QStringList stateCodes;
     QNetworkReply *reply;
     QNetworkAccessManager *manager;
     QMap<QString, station_info> stations;

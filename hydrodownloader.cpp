@@ -20,7 +20,7 @@ HydroDownloader::HydroDownloader()
 
 }
 
-QMap<QString, station_info> HydroDownloader::fetchAllStations(const QString &state) {
+QMap<QString, station_info> HydroDownloader::fetchAllHydroStations(const QString &state) {
     QMap<QString,station_info> stationList;
 
     // Create a QNetworkAccessManager
@@ -163,8 +163,8 @@ QVector<FlowData> HydroDownloader::fetchFlowData(const QString& stationId, const
     return flowDataList;
 }
 
-QVector<StationData> HydroDownloader::fetchAllStationData(const QString& stationId, const QString& startDate, const QString& endDate) {
-    QVector<StationData> stationDataList;
+QVector<HydroStationData> HydroDownloader::fetchAllStationData(const QString& stationId, const QString& startDate, const QString& endDate) {
+    QVector<HydroStationData> stationDataList;
 
     // Create a QNetworkAccessManager
     QNetworkAccessManager manager;
@@ -222,7 +222,7 @@ QVector<StationData> HydroDownloader::fetchAllStationData(const QString& station
                 }
 
                 // Add the parameter and its values to the list
-                StationData stationData;
+                HydroStationData stationData;
                 stationData.parameterName = parameterName;
                 stationData.parameterCode = parameterCode;
                 stationData.values = dataValues;
@@ -293,5 +293,350 @@ QDateTime excelToQDateTime(double excelDate) {
     // Combine the date and time
     return QDateTime(convertedDate, convertedTime);
 }
+
+
+//Token: AuOQEjHeTwRMJeUjLpoXmneFKxUDdred
+QMap<QString,WeatherStationData> HydroDownloader::fetchNOAAStations(const QString& stateCode, const QString& apiToken) {
+    QMap<QString,WeatherStationData> stationList;
+
+    // NOAA API endpoint
+    int offset = 0;
+    bool contin = true;
+    while (contin) {
+
+        QString url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/stations?locationid=FIPS:%1&limit=1000&offset=%2").arg(stateCode).arg(offset);
+
+        // Create a QNetworkAccessManager
+        QNetworkAccessManager manager;
+
+        // Create the request with API token
+        QNetworkRequest request;
+        request.setUrl(QUrl(url));
+        request.setRawHeader("token", apiToken.toUtf8());
+
+        // Make the GET request
+        QNetworkReply* reply = manager.get(request);
+
+        // Create an event loop to wait for the network reply
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec(); // Block until the network request is complete
+
+        // Process the reply
+        if (reply->error() == QNetworkReply::NoError) {
+            // Parse the JSON response
+            QByteArray responseData = reply->readAll();
+            QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+
+            if (!jsonDoc.isNull() && jsonDoc.isObject()) {
+                QJsonObject rootObj = jsonDoc.object();
+                QJsonArray stationsArray = rootObj["results"].toArray();
+
+                // Iterate over the stations and populate the QVector
+                for (const QJsonValue& stationValue : stationsArray) {
+                    QJsonObject station = stationValue.toObject();
+                    qDebug()<<station;
+                    WeatherStationData data;
+                    data.id = station["id"].toString();
+                    data.name = station["name"].toString();
+                    data.latitude = station.contains("latitude") ? station["latitude"].toDouble() : 0.0;
+                    data.longitude = station.contains("longitude") ? station["longitude"].toDouble() : 0.0;
+                    data.elevation = station.contains("elevation") ? station["elevation"].toDouble() : 0.0;
+
+                    stationList[data.name] = data;
+                }
+            } else {
+                qDebug() << "Failed to parse JSON response.";
+                contin = false;
+            }
+        } else {
+            qDebug() << "Error:" << reply->errorString();
+            contin = false;
+        }
+
+        if (stationList.count()%1000!=0)
+            contin = false;
+        else
+            offset += 1000;
+        reply->deleteLater();
+    }
+    return stationList;
+}
+
+QVector<PrecipitationData> HydroDownloader::fetchPrecipitationData(const QString& stationId, const QString& startDate, const QString& endDate, const QString& apiToken, precip_time_interval interval) {
+    QVector<PrecipitationData> dataList;
+
+    // NOAA API endpoint
+    QString url;
+
+    if (interval == precip_time_interval::HLY)
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=PRECIP_HLY&stationid=%1&datatypeid=HPCP&startdate=%2&enddate=%3&limit=1000").arg(stationId).arg(startDate).arg(endDate);
+    else if (interval == precip_time_interval::PRECIP_15)
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=PRECIP_15&stationid=%1&datatypeid=HPCP&startdate=%2&enddate=%3&limit=1000").arg(stationId).arg(startDate).arg(endDate);
+    else
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=PRECIP_5&stationid=%1&datatypeid=HPCP&startdate=%2&enddate=%3&limit=1000").arg(stationId).arg(startDate).arg(endDate);
+
+    qDebug()<<url;
+    // Create a QNetworkAccessManager
+    QNetworkAccessManager manager;
+
+    // Create the request with API token
+    QNetworkRequest request;
+    request.setUrl(QUrl(url));
+    request.setRawHeader("token", apiToken.toUtf8());
+
+    // Make the GET request
+    QNetworkReply* reply = manager.get(request);
+
+    // Use QEventLoop to wait for the response
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Process the reply
+    if (reply->error() == QNetworkReply::NoError) {
+        qDebug()<<"No Error";
+        QByteArray responseData = reply->readAll();
+        qDebug()<<responseData;
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+
+        if (!jsonDoc.isNull() && jsonDoc.isObject()) {
+            QJsonObject rootObj = jsonDoc.object();
+            QJsonArray resultsArray = rootObj["results"].toArray();
+
+            // Iterate over the results and extract precipitation data
+            for (const QJsonValue& resultValue : resultsArray) {
+                QJsonObject resultObj = resultValue.toObject();
+                QString dateTimeStr = resultObj["date"].toString();
+                double precipitation = resultObj["value"].toDouble() / 10.0; // NOAA stores precipitation in tenths of mm
+
+                PrecipitationData data;
+                data.dateTime = QDateTime::fromString(dateTimeStr, Qt::ISODate);
+                data.precipitation = precipitation;
+
+                dataList.append(data);
+            }
+        } else {
+            qDebug() << "Failed to parse JSON response.";
+        }
+    } else {
+        qDebug() << "Error fetching precipitation data:" << reply->errorString();
+    }
+
+    // Cleanup
+    reply->deleteLater();
+    return dataList;
+}
+
+QSet<DatasetDatatype> HydroDownloader::fetchDatasetAndDatatype(const QString& stationId, const QString& apiToken) {
+    QSet<DatasetDatatype> resultSet;
+
+    // NOAA API endpoint
+    QString StationID = stationId;
+    if (stationId.contains(':'));
+        StationID = stationId.split(':')[1];
+    QString url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/data?stationid=%1&limit=1000").arg(StationID);
+
+    // Create a QNetworkAccessManager
+    QNetworkAccessManager manager;
+
+    // Create the request with API token
+    QNetworkRequest request;
+    request.setUrl(QUrl(url));
+    request.setRawHeader("token", apiToken.toUtf8());
+
+    // Make the GET request
+    QNetworkReply* reply = manager.get(request);
+
+    // Use QEventLoop to wait for the response
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Process the reply
+    if (reply->error() == QNetworkReply::NoError) {
+        QByteArray responseData = reply->readAll();
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+
+        if (!jsonDoc.isNull() && jsonDoc.isObject()) {
+            QJsonObject rootObj = jsonDoc.object();
+            QJsonArray resultsArray = rootObj["results"].toArray();
+
+            // Iterate over the results and extract datasetid and datatypeid
+            for (const QJsonValue& resultValue : resultsArray) {
+                QJsonObject resultObj = resultValue.toObject();
+                qDebug()<<resultObj;
+                QString datasetId = resultObj["datasetid"].toString();
+                QString datatypeId = resultObj["datatypeid"].toString();
+
+                DatasetDatatype data;
+                data.datasetId = datasetId;
+                data.datatypeId = datatypeId;
+
+                resultSet.insert(data); // Use QSet to avoid duplicates
+            }
+        } else {
+            qDebug() << "Failed to parse JSON response.";
+        }
+    } else {
+        qDebug() << "Error fetching dataset and datatype IDs:" << reply->errorString();
+    }
+
+    // Cleanup
+    reply->deleteLater();
+    return resultSet;
+}
+
+bool operator<(const DatasetDatatype& lhs, const DatasetDatatype& rhs) {
+    return std::tie(lhs.datasetId, lhs.datatypeId) < std::tie(rhs.datasetId, rhs.datatypeId);
+}
+
+bool operator==(const DatasetDatatype& lhs, const DatasetDatatype& rhs) {
+    return lhs.datasetId == rhs.datasetId && lhs.datatypeId == rhs.datatypeId;
+}
+
+uint qHash(const DatasetDatatype& key, uint seed) {
+    return qHash(key.datasetId, seed) ^ qHash(key.datatypeId, seed);
+}
+
+
+
+
+// Function to fetch all available data types for a station
+QSet<DataType> HydroDownloader::fetchAllDataTypesForStation(const QString& stationId, const QString& apiToken) {
+    QSet<DataType> dataTypes;
+
+    // NOAA API endpoint for datatypes
+    QString url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/datatypes?stationid=%1&limit=1000").arg(stationId);
+
+    // Create a QNetworkAccessManager
+    QNetworkAccessManager manager;
+
+    // Create the request with API token
+    QNetworkRequest request;
+    request.setUrl(QUrl(url));
+    request.setRawHeader("token", apiToken.toUtf8());
+
+    // Make the GET request
+    QNetworkReply* reply = manager.get(request);
+
+    // Use QEventLoop to wait for the response
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Process the reply
+    if (reply->error() == QNetworkReply::NoError) {
+        QByteArray responseData = reply->readAll();
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+
+        if (!jsonDoc.isNull() && jsonDoc.isObject()) {
+            QJsonObject rootObj = jsonDoc.object();
+            QJsonArray resultsArray = rootObj["results"].toArray();
+
+            // Extract datatype information from results
+            for (const QJsonValue& resultValue : resultsArray) {
+                QJsonObject resultObj = resultValue.toObject();
+                qDebug()<<resultObj;
+                DataType dataType;
+                dataType.id = resultObj["id"].toString();
+                dataType.max_date = resultObj["maxdate"].toString();
+                dataType.min_date = resultObj["mindate"].toString();
+                dataType.name = resultObj["name"].toString();
+                dataTypes.insert(dataType);
+            }
+        } else {
+            qDebug() << "Failed to parse JSON response.";
+        }
+    } else {
+        qDebug() << "Error fetching data types:" << reply->errorString();
+    }
+
+    // Cleanup
+    reply->deleteLater();
+    return dataTypes;
+}
+
+// Overload operators to use DataType in QSet
+bool operator<(const DataType& lhs, const DataType& rhs) {
+    return lhs.id < rhs.id;
+}
+
+bool operator==(const DataType& lhs, const DataType& rhs) {
+    return lhs.id == rhs.id;
+}
+
+uint qHash(const DataType& key, uint seed) {
+    return qHash(key.id, seed);
+}
+
+
+// Function to fetch stations providing hourly precipitation data
+QMap<QString, WeatherStationData> HydroDownloader::fetchPrecipitationStations(const QString& FIPS, const QString& apiToken, precip_time_interval interval) {
+    QMap<QString, WeatherStationData> stationList;
+
+    // NOAA API endpoint
+    QString url;
+    if (interval == precip_time_interval::HLY)
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/stations?datasetid=PRECIP_HLY&datatypeid=HPCP&locationid=FIPS:%1&limit=1000").arg(FIPS);
+    else if (interval == precip_time_interval::PRECIP_15)
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/stations?datasetid=PRECIP_15&datatypeid=HPCP&locationid=FIPS:%1&limit=1000").arg(FIPS);
+    else
+        url = QString("https://www.ncei.noaa.gov/cdo-web/api/v2/stations?datasetid=PRECIP_5&datatypeid=HPCP&locationid=FIPS:%1&limit=1000").arg(FIPS);
+
+    // Create a QNetworkAccessManager
+    QNetworkAccessManager manager;
+
+    // Create the request with API token
+    QNetworkRequest request;
+    request.setUrl(QUrl(url));
+    request.setRawHeader("token", apiToken.toUtf8());
+
+    // Make the GET request
+    QNetworkReply* reply = manager.get(request);
+
+    // Use QEventLoop to wait for the response
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Process the reply
+    if (reply->error() == QNetworkReply::NoError) {
+        QByteArray responseData = reply->readAll();
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+
+        if (!jsonDoc.isNull() && jsonDoc.isObject()) {
+            QJsonObject rootObj = jsonDoc.object();
+            QJsonArray resultsArray = rootObj["results"].toArray();
+
+            // Iterate over the stations and populate the QVector
+            for (const QJsonValue& stationValue : resultsArray) {
+                QJsonObject stationObj = stationValue.toObject();
+                WeatherStationData metadata;
+                qDebug()<<stationObj;
+                metadata.id = stationObj["id"].toString();
+                qDebug()<<metadata.id;
+                metadata.name = stationObj["name"].toString();
+                metadata.latitude = stationObj.contains("latitude") ? stationObj["latitude"].toDouble() : 0.0;
+                metadata.longitude = stationObj.contains("longitude") ? stationObj["longitude"].toDouble() : 0.0;
+                metadata.elevation = stationObj.contains("elevation") ? stationObj["elevation"].toDouble() : 0.0;
+                metadata.mindate = stationObj["mindate"].toString();
+                metadata.maxdate = stationObj["maxdate"].toString();
+                metadata.datacoverage = stationObj.contains("datacoverage") ? stationObj["datacoverage"].toDouble() : 0.0;
+
+                stationList[metadata.name] = metadata;
+            }
+        } else {
+            qDebug() << "Failed to parse JSON response.";
+        }
+    } else {
+        qDebug() << "Error fetching station metadata:" << reply->errorString();
+    }
+
+    // Cleanup
+    reply->deleteLater();
+    return stationList;
+}
+
 
 

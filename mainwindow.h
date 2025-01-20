@@ -8,6 +8,7 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class HydroDownloaderDlg;
+class WeatherDownloaderDlg;
 
 class MainWindow : public QMainWindow
 {
@@ -20,8 +21,11 @@ public:
 private:
     Ui::MainWindow *ui;
     HydroDownloaderDlg *hydrodownloaderdlg = nullptr;
+    WeatherDownloaderDlg *weatherdownloaderdlg = nullptr;
+
 
 public slots:
-    void on_Upload_flow_data();
+    void on_Download_flow_data();
+    void on_Download_Weather_data();
 };
 #endif // MAINWINDOW_H

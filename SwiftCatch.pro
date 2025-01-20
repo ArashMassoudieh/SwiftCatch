@@ -13,16 +13,19 @@ SOURCES += \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    weatherdownloaderdlg.cpp
 
 HEADERS += \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
-    mainwindow.h
+    mainwindow.h \
+    weatherdownloaderdlg.h
 
 FORMS += \
     hydrodownloaderdlg.ui \
-    mainwindow.ui
+    mainwindow.ui \
+    weatherdownloaderdlg.ui
 
 TRANSLATIONS += \
     SwiftCatch_en_US.ts
