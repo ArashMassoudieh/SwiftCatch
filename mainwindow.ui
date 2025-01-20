@@ -29,6 +29,7 @@
     </property>
     <addaction name="actionUpload_flow_data"/>
     <addaction name="actionDownload_Weather_Data"/>
+    <addaction name="actionDownload_GeoTiff"/>
    </widget>
    <addaction name="menuData"/>
   </widget>
@@ -41,6 +42,11 @@
   <action name="actionDownload_Weather_Data">
    <property name="text">
     <string>Download Weather Data</string>
+   </property>
+  </action>
+  <action name="actionDownload_GeoTiff">
+   <property name="text">
+    <string>Download GeoTiff</string>
    </property>
   </action>
  </widget>

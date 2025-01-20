@@ -8,8 +8,10 @@ CONFIG += c++11
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 INCLUDEPATH += ../Utilities
+INCLUDEPATH += /usr/include/gdal
 
 SOURCES += \
+    geodatadownloader.cpp \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \
     main.cpp \
@@ -17,6 +19,7 @@ SOURCES += \
     weatherdownloaderdlg.cpp
 
 HEADERS += \
+    geodatadownloader.h \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
     mainwindow.h \
@@ -29,6 +32,8 @@ FORMS += \
 
 TRANSLATIONS += \
     SwiftCatch_en_US.ts
+
+LIBS += -lgdal
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
