@@ -23,7 +23,7 @@ GeoDataDownloader::GeoDataDownloader()
 
 // Function to read the GeoTIFF file into a 2D vector
 std::vector<std::vector<double>> GeoDataDownloader::readGeoTiffToVector(const std::string &filePath) {
-    std::vector<std::vector<double>> demData;
+
 
     GDALAllRegister();
     GDALDataset *dataset = (GDALDataset *)GDALOpen(filePath.c_str(), GA_ReadOnly);
@@ -35,6 +35,18 @@ std::vector<std::vector<double>> GeoDataDownloader::readGeoTiffToVector(const st
     GDALRasterBand *band = dataset->GetRasterBand(1);
     int xSize = band->GetXSize();
     int ySize = band->GetYSize();
+
+
+    double geoTransform[6];
+        if (dataset->GetGeoTransform(geoTransform) != CE_None) {
+            std::cerr << "Error: Unable to retrieve GeoTransform from the file." << std::endl;
+            GDALClose(dataset);
+
+        }
+
+        // Extract pixel size
+        pixelWidth = std::abs(geoTransform[1]);           // Pixel width (X resolution)
+        pixelHeight = std::abs(geoTransform[5]);
 
     std::vector<double> row(xSize);
     double *scanline = new double[xSize];
@@ -126,8 +138,12 @@ std::vector<std::vector<double>> GeoDataDownloader::fetchDEMData(double minX, do
 
 bool GeoDataDownloader::clipGeoTiffToBoundingBox(const std::string &inputFile,
                               const std::string &outputFile,
-                              double minX, double minY,
-                              double maxX, double maxY) {
+                              double min_X, double min_Y,
+                              double max_X, double max_Y) {
+    minX = min_X;
+    minY = min_Y;
+    maxX = max_X;
+    maxY = max_Y;
     GDALAllRegister();
 
     // Open the input GeoTIFF
@@ -209,6 +225,8 @@ bool GeoDataDownloader::clipGeoTiffToBoundingBox(const std::string &inputFile,
     // Close datasets
     GDALClose(inputDataset);
     GDALClose(outputDataset);
+    demData = readGeoTiffToVector(outputFile);
+    qDebug()<<"Pixel Size:" << pixelWidth << "," << pixelHeight;
 
     std::cout << "Clipping completed successfully. Output saved to: " << outputFile << std::endl;
     return true;

@@ -11,6 +11,11 @@ public:
     std::vector<std::vector<double>> fetchDEMData(double minX, double minY, double maxX, double maxY);
     std::vector<std::vector<double>> readGeoTiffToVector(const std::string &filePath);
     bool clipGeoTiffToBoundingBox(const std::string &inputFile, const std::string &outputFile, double minX, double minY, double maxX, double maxY);
+
+private:
+    std::vector<std::vector<double>> demData;
+    double pixelWidth, pixelHeight;
+    double minX, minY, maxX, maxY;
 };
 
 #endif // GEODATADOWNLOADER_H
