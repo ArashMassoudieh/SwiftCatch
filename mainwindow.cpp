@@ -12,6 +12,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionUpload_flow_data, SIGNAL(triggered()), this, SLOT(on_Download_flow_data()));
     connect(ui->actionDownload_Weather_Data, SIGNAL(triggered()), this, SLOT(on_Download_Weather_data()));
     connect(ui->actionDownload_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Download_GeoTIFF()));
+    connect(ui->actionUniformize_Flow_and_Rain, SIGNAL(triggered()),this,SLOT(on_Uniformized()));
 }
 
 MainWindow::~MainWindow()
@@ -39,4 +40,20 @@ void MainWindow::on_Download_GeoTIFF()
     double minX = -76.9771, minY = 38.9052, maxX = -76.9657, maxY = 38.9172;
     geodatadownloader.fetchDEMData(minX,minY,maxX,maxY);
     geodatadownloader.clipGeoTiffToBoundingBox("downloaded_dem.tif","downloaded_dem_clipped.tif",minX,minY,maxX,maxY);
+}
+
+void MainWindow::on_Uniformized()
+{
+    CTimeSeries<double> Flow_Hickey("/home/arash/Dropbox/Watershed_Modeling/flow_HickeyRun.csv");
+    CTimeSeries<double> Flow_Watts("/home/arash/Dropbox/Watershed_Modeling/flow_WATTSBRANCH.csv");
+    CTimeSeries<double> RainReagan("/home/arash/Dropbox/Watershed_Modeling/Precipitation_ReganAirport.csv");
+    CTimeSeries<double> RainReagan_Uniformized_Hickey = RainReagan.make_uniform(1.0/24.0,Flow_Hickey.GetT(0));
+    CTimeSeries<double> RainReagan_Uniformized_Watts = RainReagan.make_uniform(1.0/24.0,Flow_Watts.GetT(0));
+    CTimeSeries<double> Flow_Hickey_Uniformized = Flow_Hickey.make_uniform(1.0/24.0);
+    CTimeSeries<double> Flow_Watts_Uniformized = Flow_Watts.make_uniform(1.0/24.0);
+    RainReagan_Uniformized_Hickey.writefile("/home/arash/Dropbox/Watershed_Modeling/Rain_Hickey.csv");
+    RainReagan_Uniformized_Watts.writefile("/home/arash/Dropbox/Watershed_Modeling/Rain_Watts.csv");
+    Flow_Hickey_Uniformized.writefile("/home/arash/Dropbox/Watershed_Modeling/Flow_Hickey.csv");
+    Flow_Watts_Uniformized.writefile("/home/arash/Dropbox/Watershed_Modeling/Flow_Watts.csv");
+    cout<<"Files saved!"<<endl;
 }

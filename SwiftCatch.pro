@@ -11,6 +11,7 @@ INCLUDEPATH += ../Utilities
 INCLUDEPATH += /usr/include/gdal
 
 SOURCES += \
+    ../Utilities/Utilities.cpp \
     geodatadownloader.cpp \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \

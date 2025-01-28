@@ -28,5 +28,6 @@ public slots:
     void on_Download_flow_data();
     void on_Download_Weather_data();
     void on_Download_GeoTIFF();
+    void on_Uniformized();
 };
 #endif // MAINWINDOW_H
