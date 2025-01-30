@@ -31,6 +31,7 @@
     <addaction name="actionDownload_Weather_Data"/>
     <addaction name="actionDownload_GeoTiff"/>
     <addaction name="actionUniformize_Flow_and_Rain"/>
+    <addaction name="actionRead_Weather_Data"/>
    </widget>
    <addaction name="menuData"/>
   </widget>
@@ -53,6 +54,11 @@
   <action name="actionUniformize_Flow_and_Rain">
    <property name="text">
     <string>Uniformize Flow and Rain</string>
+   </property>
+  </action>
+  <action name="actionRead_Weather_Data">
+   <property name="text">
+    <string>Read Weather Data</string>
    </property>
   </action>
  </widget>

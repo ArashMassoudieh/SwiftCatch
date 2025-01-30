@@ -17,6 +17,7 @@ SOURCES += \
     hydrodownloaderdlg.cpp \
     main.cpp \
     mainwindow.cpp \
+    weatherdata.cpp \
     weatherdownloaderdlg.cpp
 
 HEADERS += \
@@ -24,6 +25,7 @@ HEADERS += \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
     mainwindow.h \
+    weatherdata.h \
     weatherdownloaderdlg.h
 
 FORMS += \

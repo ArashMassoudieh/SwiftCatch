@@ -29,5 +29,6 @@ public slots:
     void on_Download_Weather_data();
     void on_Download_GeoTIFF();
     void on_Uniformized();
+    void on_ReadWeatherData();
 };
 #endif // MAINWINDOW_H
