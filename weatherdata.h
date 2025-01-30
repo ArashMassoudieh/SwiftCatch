@@ -129,11 +129,13 @@ struct DataRecord {
     QString WindEquipmentChangeDate;
 };
 
-class WeatherData: public QVector<WeatherData>
+class WeatherData: public QVector<DataRecord>
 {
 public:
     WeatherData();
     bool ReadFromFile(const QString &fileName);
+    WeatherData filterByColumnValue(const QString &columnName, const QString &targetValue) const;
+    bool writeCSV(const QString &outputFile, const QString &selectedColumn);
 
 };
 

@@ -70,19 +70,18 @@ void MainWindow::on_ReadWeatherData()
            "CSV Files (*.csv);;All Files (*)"
        );
 
-       if (!fileName.isEmpty()) {
-           QFile file(fileName);
-           if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-               QTextStream in(&file);
-               while (!in.atEnd()) {
-                   QString line = in.readLine();
-                   qDebug() << line;  // Print each line of the CSV file
-               }
-               file.close();
-           } else {
-               qDebug() << "Failed to open file!";
-           }
-       }
        WeatherData data;
        data.ReadFromFile(fileName);
+       WeatherData Filtered_Data = data.filterByColumnValue("REPORT_TYPE","FM-15");
+
+       QString SavefileName = QFileDialog::getSaveFileName(
+              nullptr,
+              "Open CSV File",
+              "",
+              "CSV Files (*.csv);;All Files (*)"
+          );
+
+
+
+       Filtered_Data.writeCSV(SavefileName,"HourlyPrecipitation");
 }
