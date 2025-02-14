@@ -40,6 +40,18 @@ void MainWindow::on_Download_GeoTIFF()
     double minX = -76.9771, minY = 38.9052, maxX = -76.9657, maxY = 38.9172;
     geodatadownloader.fetchDEMData(minX,minY,maxX,maxY);
     geodatadownloader.clipGeoTiffToBoundingBox("downloaded_dem.tif","downloaded_dem_clipped.tif",minX,minY,maxX,maxY);
+    GDALAllRegister();
+
+    // Open input DEM
+    GDALDataset* demDataset = static_cast<GDALDataset*>(GDALOpen("downloaded_dem_clipped.tif", GA_ReadOnly));
+    if (!demDataset) {
+        cerr << "Failed to open input DEM file." << endl;
+        return;
+    }
+    geodatadownloader.computeFlowDirection(demDataset, "flow_direction.tiff");
+
+    GDALClose(demDataset);
+
 }
 
 void MainWindow::on_Uniformized()

@@ -8,11 +8,24 @@
 #include <QFile>
 #include <QDebug>
 #include <QEventLoop>
-#include <gdal_priv.h>
 #include <vector>
 #include <string>
 #include <ogr_spatialref.h>
 #include <iostream>
+#include "cpl_conv.h"
+
+using namespace std;
+
+// D8 Flow direction values (ESRI Standard)
+const int DIRECTION_VALUES[3][3] = {
+    {  64, 128, 1 },
+    {  32,   0, 2 },
+    {  16,   8, 4 }
+};
+
+// Offsets for neighboring cells in a 3x3 grid
+const int DX[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+const int DY[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
 
 
 
@@ -231,6 +244,66 @@ bool GeoDataDownloader::clipGeoTiffToBoundingBox(const std::string &inputFile,
     std::cout << "Clipping completed successfully. Output saved to: " << outputFile << std::endl;
     return true;
 }
+
+
+
+// Function to compute flow direction for a given DEM
+void GeoDataDownloader::computeFlowDirection(GDALDataset* demDataset, const char* outputFilename) {
+    int nXSize = demDataset->GetRasterXSize();
+    int nYSize = demDataset->GetRasterYSize();
+
+    GDALRasterBand* band = demDataset->GetRasterBand(1);
+
+    // Read DEM into memory
+    vector<float> demData(nXSize * nYSize);
+    band->RasterIO(GF_Read, 0, 0, nXSize, nYSize, demData.data(), nXSize, nYSize, GDT_Float32, 0, 0);
+
+    vector<unsigned char> flowDirection(nXSize * nYSize, 0);
+
+    // Compute flow direction using D8 algorithm
+    for (int y = 1; y < nYSize - 1; ++y) {
+        for (int x = 1; x < nXSize - 1; ++x) {
+            int idx = y * nXSize + x;
+            float minElevation = demData[idx];
+            int bestDirection = 0;
+
+            for (int d = 0; d < 8; ++d) {
+                int nx = x + DX[d];
+                int ny = y + DY[d];
+                int nIdx = ny * nXSize + nx;
+
+                if (demData[nIdx] < minElevation) {
+                    minElevation = demData[nIdx];
+                    bestDirection = 1 << d; // Assign ESRI flow direction value
+                }
+            }
+
+            flowDirection[idx] = static_cast<unsigned char>(bestDirection);
+        }
+    }
+
+    // Create output TIFF file
+    GDALDriver* tiffDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    GDALDataset* flowDataset = tiffDriver->Create(outputFilename, nXSize, nYSize, 1, GDT_Byte, nullptr);
+
+    if (!flowDataset) {
+        cerr << "Failed to create output file." << endl;
+        return;
+    }
+
+    GDALRasterBand* outBand = flowDataset->GetRasterBand(1);
+    outBand->RasterIO(GF_Write, 0, 0, nXSize, nYSize, flowDirection.data(), nXSize, nYSize, GDT_Byte, 0, 0);
+
+    // Copy georeferencing information
+    double transform[6];
+    demDataset->GetGeoTransform(transform);
+    flowDataset->SetGeoTransform(transform);
+    flowDataset->SetProjection(demDataset->GetProjectionRef());
+
+    GDALClose(flowDataset);
+    cout << "Flow direction TIFF successfully created." << endl;
+}
+
 
 
 
