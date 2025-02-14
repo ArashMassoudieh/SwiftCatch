@@ -3,6 +3,8 @@
 #include "hydrodownloaderdlg.h"
 #include "weatherdownloaderdlg.h"
 #include "geodatadownloader.h"
+#include "weatherdata.h"
+#include "QFileDialog"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -13,6 +15,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionDownload_Weather_Data, SIGNAL(triggered()), this, SLOT(on_Download_Weather_data()));
     connect(ui->actionDownload_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Download_GeoTIFF()));
     connect(ui->actionUniformize_Flow_and_Rain, SIGNAL(triggered()),this,SLOT(on_Uniformized()));
+    connect(ui->actionRead_Weather_Data, SIGNAL(triggered()),this,SLOT(on_ReadWeatherData()));
 }
 
 MainWindow::~MainWindow()
@@ -68,4 +71,29 @@ void MainWindow::on_Uniformized()
     Flow_Hickey_Uniformized.writefile("/home/arash/Dropbox/Watershed_Modeling/Flow_Hickey.csv");
     Flow_Watts_Uniformized.writefile("/home/arash/Dropbox/Watershed_Modeling/Flow_Watts.csv");
     cout<<"Files saved!"<<endl;
+}
+
+void MainWindow::on_ReadWeatherData()
+{
+    QString fileName = QFileDialog::getOpenFileName(
+           nullptr,
+           "Open CSV File",
+           "",
+           "CSV Files (*.csv);;All Files (*)"
+       );
+
+       WeatherData data;
+       data.ReadFromFile(fileName);
+       WeatherData Filtered_Data = data.filterByColumnValue("REPORT_TYPE","FM-15");
+
+       QString SavefileName = QFileDialog::getSaveFileName(
+              nullptr,
+              "Open CSV File",
+              "",
+              "CSV Files (*.csv);;All Files (*)"
+          );
+
+
+
+       Filtered_Data.writeCSV(SavefileName,"HourlyPrecipitation");
 }
