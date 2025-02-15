@@ -1,7 +1,7 @@
 #ifndef WEATHERDOWNLOADERDLG_H
 #define WEATHERDOWNLOADERDLG_H
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkReply>
 #include "hydrodownloader.h"
 
 #include <QDialog>

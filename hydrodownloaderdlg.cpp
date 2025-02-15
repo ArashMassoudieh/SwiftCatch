@@ -2,9 +2,9 @@
 #include "ui_hydrodownloaderdlg.h"
 #include "hydrodownloader.h"
 #include <QCoreApplication>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkRequest>
+#include <QtNetwork/QNetworkReply>
 #include <QUrl>
 #include <QStringList>
 #include <QDebug>
@@ -15,7 +15,7 @@
 #include <QFileDialog>
 #include <QDir>
 
-QT_CHARTS_USE_NAMESPACE
+//QT_CHARTS_USE_NAMESPACE
 
 HydroDownloaderDlg::HydroDownloaderDlg(QWidget *parent) :
     QDialog(parent),

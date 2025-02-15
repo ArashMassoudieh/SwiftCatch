@@ -1,8 +1,8 @@
 #include "hydrodownloader.h"
 #include <QCoreApplication>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkRequest>
+#include <QtNetwork/QNetworkReply>
 #include <QUrl>
 #include <QTextStream>
 #include <QFile>

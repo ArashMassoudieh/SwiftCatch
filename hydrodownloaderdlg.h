@@ -2,10 +2,10 @@
 #define HYDRODOWNLOADERDLG_H
 
 #include <QDialog>
-#include <QNetworkReply>
+#include <QtNetwork/QNetworkReply>
 #include "hydrodownloader.h"
 #include <QMap>
-#include "BTC.h"
+#include "Utilities/BTC.h"
 
 namespace Ui {
 class HydroDownloaderDlg;

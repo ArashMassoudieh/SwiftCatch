@@ -1,8 +1,8 @@
 #include "weatherdownloaderdlg.h"
 #include "ui_weatherdownloaderdlg.h"
-#include <QNetworkAccessManager>
+#include <QtNetwork/QNetworkAccessManager>
 #include "hydrodownloader.h"
-#include "BTC.h"
+#include "Utilities/BTC.h"
 
 WeatherDownloaderDlg::WeatherDownloaderDlg(QWidget *parent) :
     QDialog(parent),
