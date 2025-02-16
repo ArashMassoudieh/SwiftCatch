@@ -36,3 +36,13 @@ build-SwiftCatch-Desktop_Qt_5_15_2_GCC_64bit-Debug/
 build/.qt/QtDeploySupport.cmake
 
 build/
+
+.vs/SwiftCatch/FileContentIndex/
+
+.vs/SwiftCatch/v17/
+
+SwiftCatch/x64/Debug/qt/qmake/
+
+SwiftCatch/x64/Debug/
+
+x64/Debug/
