@@ -52,6 +52,9 @@
     <ClCompile Include="Utilities\Utilities.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MapDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="geodatadownloader.h">
@@ -75,6 +78,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="weatherdownloaderdlg.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MapDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

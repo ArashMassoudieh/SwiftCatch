@@ -118,6 +118,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="MapDialog.cpp" />
     <ClCompile Include="Utilities\Utilities.cpp" />
     <ClCompile Include="weatherdata.cpp" />
     <ClCompile Include="weatherdownloaderdlg.cpp" />
@@ -134,6 +135,7 @@
   <ItemGroup>
     <ClInclude Include="geodatadownloader.h" />
     <ClInclude Include="hydrodownloader.h" />
+    <QtMoc Include="MapDialog.h" />
     <ClInclude Include="Utilities\Utilities.h" />
     <ClInclude Include="weatherdata.h" />
     <QtMoc Include="weatherdownloaderdlg.h" />

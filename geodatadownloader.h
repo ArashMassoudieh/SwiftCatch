@@ -4,11 +4,13 @@
 #include <vector>
 #include <string>
 #include <gdal_priv.h>
+#include <qwidget.h>
 
 class GeoDataDownloader
 {
 public:
     GeoDataDownloader();
+    std::vector<std::vector<double>> fetchDEMData(double minX, double minY, double maxX, double maxY, QWidget* parent);
     std::vector<std::vector<double>> fetchDEMData(double minX, double minY, double maxX, double maxY);
     std::vector<std::vector<double>> readGeoTiffToVector(const std::string &filePath);
     bool clipGeoTiffToBoundingBox(const std::string &inputFile, const std::string &outputFile, double minX, double minY, double maxX, double maxY);

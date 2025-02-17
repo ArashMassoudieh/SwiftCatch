@@ -5,6 +5,7 @@
 #include "geodatadownloader.h"
 #include "weatherdata.h"
 #include "QFileDialog"
+#include "MapDialog.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -16,6 +17,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionDownload_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Download_GeoTIFF()));
     connect(ui->actionUniformize_Flow_and_Rain, SIGNAL(triggered()),this,SLOT(on_Uniformized()));
     connect(ui->actionRead_Weather_Data, SIGNAL(triggered()),this,SLOT(on_ReadWeatherData()));
+    connect(ui->actionSelect_Area, SIGNAL(triggered()), this, SLOT(on_Select_Area()));
+
 }
 
 MainWindow::~MainWindow()
@@ -40,8 +43,9 @@ void MainWindow::on_Download_Weather_data()
 void MainWindow::on_Download_GeoTIFF()
 {
     GeoDataDownloader geodatadownloader;
-    double minX = -76.9771, minY = 38.9052, maxX = -76.9657, maxY = 38.9172;
-    geodatadownloader.fetchDEMData(minX,minY,maxX,maxY);
+    
+    double minX = -77.009, minY = 38.86, maxX = -76.9657, maxY = 38.9172;
+    geodatadownloader.fetchDEMData(minX,minY,maxX,maxY,this);
     geodatadownloader.clipGeoTiffToBoundingBox("downloaded_dem.tif","downloaded_dem_clipped.tif",minX,minY,maxX,maxY);
     GDALAllRegister();
 
@@ -96,4 +100,10 @@ void MainWindow::on_ReadWeatherData()
 
 
        Filtered_Data.writeCSV(SavefileName,"HourlyPrecipitation");
+}
+
+void MainWindow::on_Select_Area() {
+    MapDialog *mapdialog = new MapDialog();
+    mapdialog->AddLayer("C:/Projects/DCGIS/HickyrunClipped.geojson","ftype");
+    mapdialog->exec();
 }

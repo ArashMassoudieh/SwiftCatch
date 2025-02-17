@@ -13,6 +13,7 @@
 #include <ogr_spatialref.h>
 #include <iostream>
 #include "cpl_conv.h"
+#include <QProgressDialog>
 
 using namespace std;
 
@@ -81,6 +82,7 @@ std::vector<std::vector<double>> GeoDataDownloader::fetchDEMData(double minX, do
     // Create the USGS API URL using the bounding box
     QString bbox = QString("%1,%2,%3,%4").arg(minX).arg(minY).arg(maxX).arg(maxY);
     QUrl apiUrl(QString("https://tnmaccess.nationalmap.gov/api/v1/products?datasets=National%20Elevation%20Dataset%20(NED)&bbox=%1&outputFormat=JSON").arg(bbox));
+    QString UrlString = apiUrl.toString();
     QString localFilePath = "downloaded_dem.tif";
 
     QNetworkAccessManager manager;
@@ -146,6 +148,102 @@ std::vector<std::vector<double>> GeoDataDownloader::fetchDEMData(double minX, do
     return readGeoTiffToVector(localFilePath.toStdString());
 }
 
+
+
+
+// Function to download and process DEM data
+std::vector<std::vector<double>> GeoDataDownloader::fetchDEMData(double minX, double minY, double maxX, double maxY, QWidget* parent) {
+    // Create the USGS API URL using the bounding box
+    QString bbox = QString("%1,%2,%3,%4").arg(minX).arg(minY).arg(maxX).arg(maxY);
+    QUrl apiUrl(QString("https://tnmaccess.nationalmap.gov/api/v1/products?datasets=National%20Elevation%20Dataset%20(NED)&bbox=%1&outputFormat=JSON").arg(bbox));
+    QString localFilePath = "downloaded_dem.tif";
+
+    QNetworkAccessManager manager;
+    QEventLoop loop;
+
+    // Fetch metadata
+    QNetworkReply* reply = manager.get(QNetworkRequest(apiUrl));
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        qCritical() << "Failed to fetch DEM metadata:" << reply->errorString();
+        reply->deleteLater();
+        return {};
+    }
+
+    // Parse the API response
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(reply->readAll());
+    reply->deleteLater();
+
+    if (!jsonDoc.isObject()) {
+        qCritical() << "Invalid JSON response.";
+        return {};
+    }
+
+    QJsonArray items = jsonDoc.object()["items"].toArray();
+    if (items.isEmpty()) {
+        qCritical() << "No DEM data found for the given area.";
+        return {};
+    }
+
+    // Get the first download URL
+    QJsonObject firstItem = items[0].toObject();
+    QString downloadUrl = firstItem["downloadURL"].toString();
+    if (downloadUrl.isEmpty()) {
+        qCritical() << "No download URL found in the metadata.";
+        return {};
+    }
+
+    // Download the DEM file with progress tracking
+    QNetworkRequest request(QUrl(downloadUrl));
+    QNetworkReply* downloadReply = manager.get(QNetworkRequest(QUrl(downloadUrl)));
+    
+    // Create a progress dialog
+    QProgressDialog progressDialog("Downloading DEM data...", "Cancel", 0, 100, parent);
+    progressDialog.setWindowModality(Qt::WindowModal);
+    progressDialog.show();
+
+    // Connect progress updates
+    QObject::connect(downloadReply, &QNetworkReply::downloadProgress, [&](qint64 bytesReceived, qint64 bytesTotal) {
+        if (bytesTotal > 0) {
+            int progress = static_cast<int>((bytesReceived * 100) / bytesTotal);
+            progressDialog.setValue(progress);
+        }
+        });
+
+    // Cancel download if user presses Cancel
+    QObject::connect(&progressDialog, &QProgressDialog::canceled, [&]() {
+        downloadReply->abort();
+        });
+
+    // Wait for download to complete
+    QObject::connect(downloadReply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Check for download errors
+    if (downloadReply->error() != QNetworkReply::NoError) {
+        qCritical() << "Failed to download DEM file:" << downloadReply->errorString();
+        downloadReply->deleteLater();
+        return {};
+    }
+
+    // Save the DEM file incrementally
+    QFile file(localFilePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qCritical() << "Failed to save the DEM file.";
+        downloadReply->deleteLater();
+        return {};
+    }
+    file.write(downloadReply->readAll());
+    file.close();
+    downloadReply->deleteLater();
+
+    progressDialog.setValue(100);  // Ensure progress bar reaches 100%
+
+    // Process the DEM file and return the data
+    return readGeoTiffToVector(localFilePath.toStdString());
+}
 
 
 
