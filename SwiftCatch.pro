@@ -10,6 +10,12 @@ CONFIG += c++17
 INCLUDEPATH += /usr/include/gdal
 
 SOURCES += \
+    GeoDataModel.cpp \
+    GeoDataSetInterface.cpp \
+    MapDialog.cpp \
+    OpenGLGeoWidget.cpp \
+    PointGeoDataSet.cpp \
+    TableViewer.cpp \
     Utilities/QuickSort.cpp \
     Utilities/Utilities.cpp \
     geodatadownloader.cpp \
@@ -17,10 +23,17 @@ SOURCES += \
     hydrodownloaderdlg.cpp \
     main.cpp \
     mainwindow.cpp \
+    polylinegeodataset.cpp \
     weatherdata.cpp \
     weatherdownloaderdlg.cpp
 
 HEADERS += \
+    GeoDataModel.h \
+    GeoDataSetInterface.h \
+    MapDialog.h \
+    OpenGLGeoWidget.h \
+    PointGeoDataSet.h \
+    TableViewer.h \
     Utilities/BTC.h \
     Utilities/BTC.hpp \
     Utilities/BTCSet.h \
@@ -31,6 +44,7 @@ HEADERS += \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
     mainwindow.h \
+    polylinegeodataset.h \
     weatherdata.h \
     weatherdownloaderdlg.h
 

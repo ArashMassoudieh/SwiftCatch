@@ -1,4 +1,7 @@
 #pragma once
+#ifndef POINTGEODATASET_H
+#define POINTGEODATASET_H
+
 #include "GeoDataSetInterface.h"
 #include <QVector>
 #include <QVariantMap>
@@ -73,4 +76,4 @@ public:
     
     
 };
-
+#endif

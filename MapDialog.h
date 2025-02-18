@@ -1,3 +1,6 @@
+#ifndef MAPDIALOG_H
+#define MAPDIALOG_H
+
 #include <QApplication>
 #include <QDialog>
 #include <QGraphicsView>
@@ -487,19 +490,19 @@ public:
         connect(zoomExtends, &QPushButton::clicked, mapViewer, &OpenGLGeoWidget::zoomExtents);
     }
 
-    void AddLayer(const QJsonDocument& doc, const QString attributeKey = "")
+    void AddLayer(const QString &LayerName, const QJsonDocument& doc, const QString attributeKey = "")
     {
         GeoDataSetInterface data; 
         data.fromGeoJson(doc);
-        mapViewer->plotGeoDataEntries(&data,attributeKey);
+        mapViewer->plotGeoDataEntries(LayerName, &data,attributeKey);
     }
 
-    void AddLayer(PointGeoDataSet *geodataset, const QString& attributeKey = "")
+    void AddLayer(const QString &LayerName, PointGeoDataSet *geodataset, const QString& attributeKey = "")
     {
-        mapViewer->plotGeoDataEntries(geodataset, attributeKey);
+        mapViewer->plotGeoDataEntries(LayerName, geodataset, attributeKey);
     }
 
-    void AddLayer(const QString& GeoJsonFileName, const QString &attributekey = "")
+    void AddLayer(const QString &LayerName, const QString& GeoJsonFileName, const QString &attributekey = "")
     {
         QFile file(GeoJsonFileName);
         if (!file.open(QIODevice::ReadOnly)) {
@@ -510,7 +513,7 @@ public:
         QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
         file.close();
 
-        AddLayer(doc,attributekey);
+        AddLayer(LayerName, doc,attributekey);
     }
 
 private slots:
@@ -531,3 +534,4 @@ private:
 };
 
 
+#endif

@@ -1,4 +1,6 @@
 ﻿#pragma once
+#ifndef OPENGLGEOWIDGET_H
+#define OPENGLGEOWIDGET_H
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions>
 #include <QVector>
@@ -21,9 +23,9 @@ public:
         calculateBoundingBox();  // Compute initial bounding box
     }
 
-    void plotGeoDataEntries(GeoDataSetInterface *entries, const QString& attributeKey) {
-        geoDataEntries = entries;
-        assignColorsByAttribute(attributeKey);
+    void plotGeoDataEntries(const QString LayerName, GeoDataSetInterface *entries, const QString& attributeKey) {
+        geoDataCollection[LayerName] = entries;
+        assignColorsByAttribute(LayerName,attributeKey);
         calculateBoundingBox();  // Compute initial bounding box
         update();  // Refresh OpenGL rendering
     }
@@ -45,23 +47,27 @@ protected:
         updateProjection();
     }
 
-    void paintGL() {
+    void paintGL() override {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
 
-        for (const GeoDataEntry& entry : *geoDataEntries) {
-            QColor color = attributeColorMap.value(entry.attributes.value(selectedAttribute, "").toString(), Qt::black);
-            painter.setBrush(color);
-            painter.setPen(Qt::NoPen);
 
-            for (const QPointF& point : entry.location) {
-                QPointF screenPoint = mapToScreen(point);
-                painter.drawEllipse(screenPoint, 3, 3);  // ✅ Qt-based drawing
+        for (QMap<QString, GeoDataSetInterface*>::iterator it = geoDataCollection.begin(); it != geoDataCollection.end(); ++it)
+        {
+            if (it.value()->FeatureType==featuretype::Points)
+            for (const GeoDataEntry& entry : *it.value()) {
+                QColor color = attributeColorMap[it.key()].value(entry.attributes.value(selectedAttribute[it.key()], "").toString(), Qt::black);
+                painter.setBrush(color);
+                painter.setPen(Qt::NoPen);
+
+                for (const QPointF& point : entry.location) {
+                    QPointF screenPoint = mapToScreen(point);
+                    painter.drawEllipse(screenPoint, 3, 3);  // ✅ Qt-based drawing
+                }
             }
         }
-
         if (isZooming) {
             drawZoomRectangle(painter);
         }
@@ -95,28 +101,40 @@ protected:
     }
 
 private:
-    GeoDataSetInterface *geoDataEntries;
+    QMap<QString, GeoDataSetInterface*> geoDataCollection;
     QRectF boundingBox;   // Bounding box of all points
     QRectF viewBox;       // Current viewport
     QPoint zoomStart, zoomEnd;  // Points for zoom window selection
-    QString selectedAttribute;  // Attribute used for color coding
-    QMap<QString, QColor> attributeColorMap;  // Maps attributes to colors
+    QMap<QString, QString> selectedAttribute;  // Attribute used for color coding
+    QMap<QString, QMap<QString, QColor>> attributeColorMap;  // Maps attributes to colors
     QMatrix4x4 projectionMatrix;
     bool isZooming;
 
     // Calculate bounding box of all points
     void calculateBoundingBox() {
-        if (!geoDataEntries) return;
-        if (geoDataEntries->count()==0) return; 
+        if (geoDataCollection.count()==0) return;
 
-        if (geoDataEntries->FeatureType == featuretype::Points)
-            boundingBox = static_cast<PointGeoDataSet*>(geoDataEntries)->BoundingBox(); 
-        viewBox = boundingBox;
+
+        qreal minX = 1e12;
+        qreal maxX = -1e12;
+        qreal minY = 1e12;
+        qreal maxY = -1e12;
+
+        for (QMap<QString, GeoDataSetInterface*>::iterator it = geoDataCollection.begin(); it != geoDataCollection.end(); ++it)
+        {
+            QRectF rect = it.value()->BoundingBox();
+            if (rect.left() < minX) minX = rect.left();
+            if (rect.right() > maxX) maxX = rect.right();
+            if (rect.bottom() < minY) minY = rect.bottom();
+            if (rect.top() > maxY) maxY = rect.top();
+
+        }
+        viewBox = QRectF(QPointF(minX, minY), QPointF(maxX, maxY));;
     }
 
     // Update projection based on viewBox
     void updateProjection() {
-        projectionMatrix.setToIdentity();  // ✅ Reset projection matrix
+        projectionMatrix.setToIdentity();  // Reset projection matrix
         projectionMatrix.ortho(viewBox.left(), viewBox.right(), viewBox.bottom(), viewBox.top(), -1, 1);  // ✅ Qt-based projection
 
         update();  
@@ -172,14 +190,14 @@ private:
         painter.drawRect(QRectF(zoomStart, zoomEnd));
     }
 
-    void assignColorsByAttribute(const QString& attributeKey) {
-        selectedAttribute = attributeKey;
-        attributeColorMap.clear();
+    void assignColorsByAttribute(const QString &LayerName, const QString& attributeKey) {
+        selectedAttribute[LayerName] = attributeKey;
+        attributeColorMap[LayerName].clear();
 
-        for (const GeoDataEntry& entry : *geoDataEntries) {
+        for (const GeoDataEntry& entry : *geoDataCollection[LayerName]) {
             QString attributeValue = entry.attributes.value(attributeKey, "").toString();
-            if (!attributeColorMap.contains(attributeValue)) {
-                attributeColorMap[attributeValue] = generateRandomColor();
+            if (!attributeColorMap[LayerName].contains(attributeValue)) {
+                attributeColorMap[LayerName][attributeValue] = generateRandomColor();
             }
         }
     }
@@ -191,3 +209,4 @@ private:
     }
 
 };
+#endif

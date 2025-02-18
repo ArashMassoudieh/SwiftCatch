@@ -1,4 +1,6 @@
 #pragma once
+#ifndef GEODATAMODEL_H
+#define GEODATAMODEL_H
 #include <QAbstractTableModel>
 #include <QVector>
 #include <QVariantMap>
@@ -63,4 +65,4 @@ private:
     GeoDataSetInterface *dataSet;
     QStringList columnNames;
 };
-
+#endif

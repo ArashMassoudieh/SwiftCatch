@@ -1,4 +1,6 @@
 #pragma once
+#ifndef TABLEVIEWER_H
+#define TABLEVIEWER_H
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QTableView>
@@ -47,3 +49,4 @@ public:
 private:
     QTableView* tableView;
 };
+#endif

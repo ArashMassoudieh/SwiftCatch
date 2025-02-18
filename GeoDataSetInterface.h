@@ -1,8 +1,11 @@
 #pragma once
+#ifndef GEODATASETINTERFACE
+#define GEODATASETINTERFACE
 #include <QVariantMap>
 #include <QRectF>
 #include <QUuid>
 #include <QJsonObject>
+
 
 
 class GeoDataEntry  {
@@ -59,7 +62,7 @@ public:
     virtual ~GeoDataSetInterface() = default;
 
     // Virtual Functions (Fixed Signatures)
-    virtual unsigned int count() const { return this->size(); }
+    unsigned int count() const { return this->size(); }
     virtual QRectF BoundingBox() { 
         return QRectF(); 
     }
@@ -71,3 +74,5 @@ public:
     GeoDataSetInterface fromGeoJson(const QJsonDocument& geoJsonDoc);
 };
 
+QRectF bounding_Box(const QVector<QPointF> &points);
+#endif

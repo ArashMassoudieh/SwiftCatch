@@ -82,3 +82,20 @@ GeoDataSetInterface GeoDataSetInterface::fromGeoJson(const QJsonDocument& geoJso
 
     return dataset;
 }
+
+QRectF bounding_Box(const QVector<QPointF> &points)
+{
+    qreal minX = points.first().x();
+    qreal maxX = points.first().x();
+    qreal minY = points.first().y();
+    qreal maxY = points.first().y();
+
+    for (const QPointF& p : points) {
+        if (p.x() < minX) minX = p.x();
+        if (p.x() > maxX) maxX = p.x();
+        if (p.y() < minY) minY = p.y();
+        if (p.y() > maxY) maxY = p.y();
+    }
+
+    return QRectF(QPointF(minX, minY), QPointF(maxX, maxY));
+}
