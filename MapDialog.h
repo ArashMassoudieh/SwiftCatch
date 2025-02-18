@@ -16,6 +16,8 @@
 #include <QDebug>
 #include <QHBoxLayout>
 #include <QGraphicsPathItem>
+#include "PointGeoDataSet.h"
+#include "OpenGLGeoWidget.h"
 
 class MapViewer : public QGraphicsView {
     Q_OBJECT
@@ -181,6 +183,50 @@ public:
         QRectF boundingBox = scene->itemsBoundingRect();  // Get bounding box of all items
         fitInView(boundingBox, Qt::KeepAspectRatio);       // Adjust the view to fit the scene
     }
+    void AddLayer(PointGeoDataSet *geodataset, const QString& attributeKey = "")
+    {
+        if (geodataset->count()==0)
+            return;
+        QMap<QString, QColor> colorMap;
+        QMap<double, QColor> colorMapNumeric;
+
+        for (const GeoDataEntry& feature : *geodataset) {
+            
+            QString type = "Point";
+
+            bool numeric_attribute = false;
+            if (feature.attributes[attributeKey].typeId()==QMetaType::Int || feature.attributes[attributeKey].typeId() == QMetaType::Double)
+                numeric_attribute = true;
+            QString attributeValueStr = feature.attributes[attributeKey].toString();
+            double attributeValue = feature.attributes[attributeKey].toDouble();
+            // Generate or retrieve a random color for the attribute
+            QColor featureColor = Qt::transparent;
+            if (!numeric_attribute)
+            {
+                if (!colorMap.contains(attributeValueStr)) {
+                    colorMap[attributeValueStr] = generateRandomColor();
+                }
+                featureColor = colorMap[attributeValueStr];
+            }
+            else
+            {
+                if (!colorMapNumeric.contains(attributeValue)) {
+                    colorMapNumeric[attributeValue] = generateRandomColor();
+                }
+                featureColor = colorMapNumeric[attributeValue];
+            }
+    
+            double lon = feature.location[0].x();
+            double lat = feature.location[0].y();
+            AddPoint(lon, lat, featureColor);
+                
+            
+        }
+        zoomExtend();
+    }
+    
+    
+    
     void AddLayer(const QJsonDocument& doc, const QString &attributeKey = "") {
         
         if (!doc.isObject()) {
@@ -204,8 +250,6 @@ public:
                 numeric_attribute = true; 
             QString attributeValueStr = featureObj["properties"].toObject()[attributeKey].toString();
             double attributeValue = featureObj["properties"].toObject()[attributeKey].toDouble();
-            qDebug() << featureObj;
-            qDebug() << featureObj["properties"].toObject()[attributeKey];
             // Generate or retrieve a random color for the attribute
             QColor featureColor = Qt::transparent;
             if (!numeric_attribute)
@@ -270,10 +314,13 @@ public:
 
         QGraphicsEllipseItem* marker = new QGraphicsEllipseItem(point.x() - 3, point.y() - 3, 6, 6);
         marker->setBrush(QBrush(Qt::red));
+        QRectF boundingBox = scene->itemsBoundingRect();
+        qreal width = fabs(double(boundingBox.topLeft().x() - boundingBox.bottomRight().x()) / 1000.0);
+
         if (featureColor != Qt::transparent)
-            marker->setPen(QPen(featureColor, 1));
+            marker->setPen(QPen(featureColor, width));
         else
-            marker->setPen(QPen(Qt::green, 1));
+            marker->setPen(QPen(Qt::green, width));
 
         scene->addItem(marker);
     }
@@ -292,7 +339,7 @@ public:
             path.append(mappedPoint);
         }
         QRectF boundingBox = scene->itemsBoundingRect();
-        qDebug() << boundingBox;
+        
         qreal width = fabs(double(boundingBox.topLeft().x() - boundingBox.bottomRight().x())/1000.0);
         for (int i = 0; i < path.size() - 1; ++i) {
 
@@ -395,13 +442,13 @@ class MapDialog : public QDialog {
 
 public:
     explicit MapDialog(QWidget* parent = nullptr) : QDialog(parent) {
-        setWindowTitle("U.S. GeoJSON Map Picker");
+        setWindowTitle("Map");
         resize(900, 600);
 
         QVBoxLayout* mainLayout = new QVBoxLayout(this);
         QHBoxLayout* buttonLayout = new QHBoxLayout();
 
-        mapViewer = new MapViewer(this);
+        mapViewer = new OpenGLGeoWidget(this);
         mousePositionLabel = new QLabel("Mouse Position: N/A", this);
         infoLabel = new QLabel("Select a region on the map", this);
 
@@ -421,31 +468,49 @@ public:
         buttonLayout->addWidget(selectBoxButton);
         buttonLayout->addWidget(closeButton);
 
+        mapViewer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);  // Expands in both directions
+        mousePositionLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);  // Takes only necessary space
+        infoLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);  // Takes only necessary space
 
-        mainLayout->addWidget(mapViewer);
-        mainLayout->addWidget(mousePositionLabel);
-        mainLayout->addWidget(infoLabel);
-        mainLayout->addLayout(buttonLayout);
+
+        mainLayout->addWidget(mapViewer,1);
+        mainLayout->addWidget(mousePositionLabel,0);
+        mainLayout->addWidget(infoLabel,0);
+        mainLayout->addLayout(buttonLayout,0);
 
         connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-        connect(zoomInButton, &QPushButton::clicked, mapViewer, &MapViewer::zoomIn);
-        connect(zoomOutButton, &QPushButton::clicked, mapViewer, &MapViewer::zoomOut);
-        connect(panModeButton, &QPushButton::clicked, mapViewer, &MapViewer::togglePanMode);
-        connect(selectBoxButton, &QPushButton::clicked, mapViewer, &MapViewer::toggleSelectMode);
-        connect(mapViewer, &MapViewer::boundingBoxSelected, this, &MapDialog::onBoundingBoxSelected);
-        connect(mapViewer, &MapViewer::mousePositionUpdated, this, &MapDialog::onMousePositionUpdated);
-        connect(zoomWindowButton, &QPushButton::clicked, mapViewer, &MapViewer::enableZoomWindowMode);
-        connect(zoomExtends, &QPushButton::clicked, mapViewer, &MapViewer::zoomExtend);
+        //connect(panModeButton, &QPushButton::clicked, mapViewer, &MapViewer::togglePanMode);
+        //connect(selectBoxButton, &QPushButton::clicked, mapViewer, &MapViewer::toggleSelectMode);
+        //connect(mapViewer, &MapViewer::boundingBoxSelected, this, &MapDialog::onBoundingBoxSelected);
+        //connect(mapViewer, &MapViewer::mousePositionUpdated, this, &MapDialog::onMousePositionUpdated);
+        //connect(zoomWindowButton, &QPushButton::clicked, mapViewer, &OpenGLGeoWidget::zoom ::enableZoomWindowMode);
+        connect(zoomExtends, &QPushButton::clicked, mapViewer, &OpenGLGeoWidget::zoomExtents);
     }
 
     void AddLayer(const QJsonDocument& doc, const QString attributeKey = "")
     {
-        mapViewer->AddLayer(doc,attributeKey);
+        GeoDataSetInterface data; 
+        data.fromGeoJson(doc);
+        mapViewer->plotGeoDataEntries(&data,attributeKey);
+    }
+
+    void AddLayer(PointGeoDataSet *geodataset, const QString& attributeKey = "")
+    {
+        mapViewer->plotGeoDataEntries(geodataset, attributeKey);
     }
 
     void AddLayer(const QString& GeoJsonFileName, const QString &attributekey = "")
     {
-        mapViewer->AddLayer(GeoJsonFileName,attributekey);
+        QFile file(GeoJsonFileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            qCritical() << "Failed to open GeoJSON file.";
+            return;
+        }
+
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        file.close();
+
+        AddLayer(doc,attributekey);
     }
 
 private slots:
@@ -460,7 +525,7 @@ private slots:
 
 
 private:
-    MapViewer* mapViewer;
+    OpenGLGeoWidget* mapViewer;
     QLabel* infoLabel;
     QLabel* mousePositionLabel;
 };

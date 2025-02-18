@@ -3,23 +3,10 @@
 
 #include <QString>
 #include <QDateTime>
+#include "PointGeoDataSet.h"
 
 
-struct station_info
-{
-    QString agency_cd;
-    QString site_no;
-    QString station_nm;
-    QString site_tp_cd;
-    double dec_lat_va;
-    double dec_long_va;
-    QString coord_acy_cd;
-    QString ddec_coord_datum_cd;
-    QString alt_va;
-    QString alt_acy_va;
-    QString alt_datum_cd;
-    QString huc_cd;
-};
+
 
 struct FlowData {
     QDateTime dateTime;
@@ -75,6 +62,7 @@ class HydroDownloader
 public:
     HydroDownloader();
     QMap<QString, station_info>  fetchAllHydroStations(const QString &state);
+    PointGeoDataSet fetchAllHydroStationsToGeoDataSet(const QString& state);
     QVector<FlowData> fetchFlowData(const QString& stationId, const QString& startDate, const QString& endDate);
     QVector<HydroStationData> fetchAllStationData(const QString& stationId, const QString& startDate = "", const QString& endDate = "");
     QMap<QString,WeatherStationData> fetchNOAAStations(const QString& stateCode, const QString& apiToken);

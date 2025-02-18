@@ -15,9 +15,26 @@
 
 
 
+
 HydroDownloader::HydroDownloader()
 {
 
+}
+
+PointGeoDataSet HydroDownloader::fetchAllHydroStationsToGeoDataSet(const QString& state)
+{
+    QMap<QString, station_info> data = fetchAllHydroStations(state);
+    PointGeoDataSet out; 
+    for (const station_info item : data)
+    {
+        GeoDataEntry entry; 
+        entry.attributes["Agency Code"] = item.agency_cd;
+        entry.attributes["Station Name"] = item.station_nm;
+        entry.attributes["Site No"] = item.site_no;
+        entry.location.append(QPointF(item.dec_lat_va, item.dec_long_va));
+        out.append(entry);
+    }
+    return out; 
 }
 
 QMap<QString, station_info> HydroDownloader::fetchAllHydroStations(const QString &state) {
@@ -63,16 +80,16 @@ QMap<QString, station_info> HydroDownloader::fetchAllHydroStations(const QString
 
                 statinfo.site_no = fields[1];
                 statinfo.station_nm = fields[2];
-                statinfo.site_tp_cd = fields[2];
-                statinfo.dec_lat_va = fields[2].toDouble();
-                statinfo.dec_long_va = fields[2].toDouble();
-                statinfo.coord_acy_cd = fields[2];
-                statinfo.ddec_coord_datum_cd = fields[2];
-                statinfo.alt_va = fields[2];
-                statinfo.alt_acy_va = fields[2];
-                statinfo.alt_datum_cd = fields[2];
-                statinfo.huc_cd = fields[2];
-                if (statinfo.agency_cd!="agency_cd" && statinfo.agency_cd!="5s")
+                statinfo.site_tp_cd = fields[3];
+                statinfo.dec_lat_va = fields[4].toDouble();
+                statinfo.dec_long_va = fields[5].toDouble();
+                statinfo.coord_acy_cd = fields[6];
+                statinfo.ddec_coord_datum_cd = fields[7];
+                statinfo.alt_va = fields[8];
+                statinfo.alt_acy_va = fields[9];
+                statinfo.alt_datum_cd = fields[10];
+                statinfo.huc_cd = fields[11];
+                if (statinfo.agency_cd!="agency_cd" && statinfo.agency_cd!="5s" && statinfo.dec_long_va!=0)
                     stationList[statinfo.station_nm] = statinfo;
             }
         }

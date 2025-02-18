@@ -46,3 +46,7 @@ SwiftCatch/x64/Debug/qt/qmake/
 SwiftCatch/x64/Debug/
 
 x64/Debug/
+
+*.tif
+
+*.xml

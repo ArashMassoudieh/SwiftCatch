@@ -37,12 +37,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>Qt 6.8</QtInstall>
-    <QtModules>core;gui;network;widgets;charts;charts</QtModules>
+    <QtModules>core;gui;network;widgets;opengl;openglwidgets;charts;charts</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>Qt 6.8</QtInstall>
-    <QtModules>core;gui;network;widgets;charts;</QtModules>
+    <QtModules>core;gui;network;widgets;opengl;openglwidgets;charts;</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -70,7 +70,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\Program Files\GDAL\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gdal_i.lib;OpenGL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y "C:\Program Files\GDAL\*.dll" "$(TargetDir)"</Command>
@@ -83,7 +83,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\Program Files\GDAL\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>gdal_i.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>gdal_i.lib;OpenGL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y "C:\Program Files\GDAL\*.dll" "$(TargetDir)"</Command>
@@ -118,7 +118,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="GeoDataSetInterface.cpp" />
     <ClCompile Include="MapDialog.cpp" />
+    <ClCompile Include="OpenGLGeoWidget.cpp" />
+    <ClCompile Include="GeoDataModel.cpp" />
+    <ClCompile Include="PointGeoDataSet.cpp" />
+    <ClCompile Include="TableViewer.cpp" />
     <ClCompile Include="Utilities\Utilities.cpp" />
     <ClCompile Include="weatherdata.cpp" />
     <ClCompile Include="weatherdownloaderdlg.cpp" />
@@ -134,8 +139,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="geodatadownloader.h" />
+    <ClInclude Include="GeoDataSetInterface.h" />
     <ClInclude Include="hydrodownloader.h" />
     <QtMoc Include="MapDialog.h" />
+    <QtMoc Include="GeoDataModel.h" />
+    <QtMoc Include="OpenGLGeoWidget.h" />
+    <ClInclude Include="PointGeoDataSet.h" />
+    <QtMoc Include="TableViewer.h" />
     <ClInclude Include="Utilities\Utilities.h" />
     <ClInclude Include="weatherdata.h" />
     <QtMoc Include="weatherdownloaderdlg.h" />

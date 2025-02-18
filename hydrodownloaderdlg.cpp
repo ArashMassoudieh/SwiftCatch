@@ -14,6 +14,9 @@
 #include <QDateTimeAxis>
 #include <QFileDialog>
 #include <QDir>
+#include "TableViewer.h"
+#include "GeoDataModel.h"
+#include "MapDialog.h"
 
 //QT_CHARTS_USE_NAMESPACE
 
@@ -32,8 +35,8 @@ HydroDownloaderDlg::HydroDownloaderDlg(QWidget *parent) :
     fetchStateCodes("https://raw.githubusercontent.com/ArashMassoudieh/State_Codes/main/State_Codes");
     ui->StatescomboBox->addItems(StateCodes);
     ui->StatescomboBox->setEnabled(true);
-    connect(ui->StatescomboBox,SIGNAL(currentIndexChanged(const QString &)), this, SLOT(on_State_Changed()));
-    connect(ui->SelectStationcomboBox,SIGNAL(currentIndexChanged(const QString &)), this, SLOT(on_Station_Selected()));
+    connect(ui->StatescomboBox,SIGNAL(currentIndexChanged(int)), this, SLOT(on_State_Changed()));
+    connect(ui->SelectStationcomboBox,SIGNAL(currentIndexChanged(int)), this, SLOT(on_Station_Selected()));
     connect(ui->dateEditEnd,SIGNAL(editingFinished()), this, SLOT(on_Date_Changed()));
     connect(ui->RetrieveDataBtn,SIGNAL(clicked()), this, SLOT(on_DataRetrieveRequested()));
     connect(ui->ExporttoCSV,SIGNAL(clicked()), this, SLOT(on_ExporttoCSV()));
@@ -90,9 +93,17 @@ void HydroDownloaderDlg::on_State_Changed()
     HydroDownloader hydrodowloader;
     stations.clear();
     stations = hydrodowloader.fetchAllHydroStations(ui->StatescomboBox->currentText());
+    PointGeoDataSet *pointgeodata = new PointGeoDataSet(stations);
+    GeoDataModel* pointgeodatamodel = new GeoDataModel(pointgeodata);
     for (const QString& key : stations.keys())
         ui->SelectStationcomboBox->addItem(key);
     ui->SelectStationcomboBox->setEnabled(true);
+    TableViewer *tableviewer = new TableViewer();
+    tableviewer->setModel(pointgeodatamodel);
+    tableviewer->show(); 
+    MapDialog* map = new MapDialog(this); 
+    map->AddLayer(pointgeodata);
+    map->show(); 
 
 }
 
