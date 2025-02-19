@@ -102,7 +102,7 @@ void HydroDownloaderDlg::on_State_Changed()
     tableviewer->setModel(pointgeodatamodel);
     tableviewer->show(); 
     MapDialog* map = new MapDialog(this); 
-    map->AddLayer("USGS Stations", pointgeodata);
+    map->AddLayer("USGS Stations", pointgeodata, "Site Type");
     map->show(); 
 
 }

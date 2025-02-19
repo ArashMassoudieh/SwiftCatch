@@ -77,6 +77,7 @@ PointGeoDataSet::PointGeoDataSet(const QMap<QString, station_info>& geodataset)
         entry.attributes["Agency Code"] = item.agency_cd;
         entry.attributes["Station Name"] = item.station_nm;
         entry.attributes["Site No"] = item.site_no;
+        entry.attributes["Site Type"] = item.site_tp_cd;
         QPointF location;
         location.setX(item.dec_long_va);
         location.setY(item.dec_lat_va);

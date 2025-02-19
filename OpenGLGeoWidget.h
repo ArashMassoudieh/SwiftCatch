@@ -27,12 +27,15 @@ public:
         geoDataCollection[LayerName] = entries;
         assignColorsByAttribute(LayerName,attributeKey);
         calculateBoundingBox();  // Compute initial bounding box
+        viewBox = boundingBox;
+        //qDebug() << "Initial bounding box: " << boundingBox;
         update();  // Refresh OpenGL rendering
     }
 
     // Zoom Extents: Reset view to fit all points
     void zoomExtents() {
         viewBox = boundingBox;
+        //qDebug() << "Bounding box after Zoom Extend" << boundingBox;
         update();
     }
 
@@ -129,13 +132,14 @@ private:
             if (rect.top() > maxY) maxY = rect.top();
 
         }
-        viewBox = QRectF(QPointF(minX, minY), QPointF(maxX, maxY));;
+        boundingBox = QRectF(QPointF(minX, minY), QPointF(maxX, maxY));;
+        
     }
 
     // Update projection based on viewBox
     void updateProjection() {
         projectionMatrix.setToIdentity();  // Reset projection matrix
-        projectionMatrix.ortho(viewBox.left(), viewBox.right(), viewBox.bottom(), viewBox.top(), -1, 1);  // ✅ Qt-based projection
+        projectionMatrix.ortho(viewBox.left(), viewBox.right(), viewBox.bottom(), viewBox.top(), -1, 1);  // 
 
         update();  
     }
@@ -145,15 +149,15 @@ private:
 
     // Apply Zoom Window
     void applyZoomWindow() {
-        QPointF p1 = mapToOpenGL(zoomStart);
-        QPointF p2 = mapToOpenGL(zoomEnd);
-        QRectF zoomRect = QRectF(p1, p2).normalized();
-
-        qDebug() << "Zoom Start:" << zoomStart << "Zoom End:" << zoomEnd;
-        qDebug() << "Zoom Rect in OpenGL:" << zoomRect;
+        QPointF p1_clicked = mapToOpenGL(zoomStart);
+        QPointF p2_clicked = mapToOpenGL(zoomEnd);
+        QPointF p1 = QPointF(std::min(p1_clicked.x(), p2_clicked.x()), std::max(p1_clicked.y(), p2_clicked.y()));
+        QPointF p2 = QPointF(std::max(p1_clicked.x(), p2_clicked.x()), std::min(p1_clicked.y(), p2_clicked.y()));
+        QRectF zoomRect = QRectF(p1, p2);
+        QRectF zoomRect_Clicked = QRectF(p1_clicked, p2_clicked);
 
         // Ensure the zoom region is valid (avoid extreme zoom)
-        if (zoomRect.width() > 1e-3 && zoomRect.height() > 1e-3) {
+        if (fabs(zoomRect.width()) > 1e-3 && fabs(zoomRect.height()) > 1e-3) {
             viewBox = zoomRect;  // 
             update();  // 
         }
@@ -167,17 +171,18 @@ private:
         qreal xRatio = static_cast<qreal>(point.x()) / width();
         qreal yRatio = static_cast<qreal>(point.y()) / height();
 
+        //qDebug() << "xRatio: " << xRatio << "yRatio: " << yRatio;
         qreal x = viewBox.left() + xRatio * viewBox.width();
-        qreal y = viewBox.bottom() - yRatio * viewBox.height();  // 
-
-        qDebug() << "Mapped Screen Point" << point << "to OpenGL" << QPointF(x, y);
+        qreal y = viewBox.top() + yRatio * viewBox.height();  // 
+        //qDebug() << "x: " << x << "y: " << y;
+        //qDebug() << "Mapped Screen Point" << point << "to OpenGL" << QPointF(x, y);
         return QPointF(x, y);
     }
 
 
     QPointF mapToScreen(const QPointF& worldPoint) {
         qreal x = (worldPoint.x() - viewBox.left()) / viewBox.width() * width();
-        qreal y = (1.0 - (worldPoint.y() - viewBox.top()) / viewBox.height()) * height();  // ✅ Fix Y-axis flip
+        qreal y = (worldPoint.y() - viewBox.top()) / viewBox.height() * height();  
 
         return QPointF(x, y);
     }
