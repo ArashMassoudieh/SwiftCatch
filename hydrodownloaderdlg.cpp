@@ -17,6 +17,7 @@
 #include "TableViewer.h"
 #include "GeoDataModel.h"
 #include "MapDialog.h"
+#include "QMessageBox"
 
 using namespace QtCharts;
 
@@ -144,9 +145,16 @@ void HydroDownloaderDlg::on_DataRetrieveRequested()
     for (int i=0; i<flowdata.size(); i++)
         OpenHydroQualTimeSeries.append(qDateTimeToExcel(flowdata[i].dateTime),flowdata[i].flowRate*pow(0.3048,3)*86400);
 
-    UniformizedTimeSeries = OpenHydroQualTimeSeries.make_uniform(1.0/24.0,qDateTimeToExcel(ui->dateEditStart->dateTime()));
-
-    showGraph(UniformizedTimeSeries);
+    if (flowdata.size()>0)
+    {   UniformizedTimeSeries = OpenHydroQualTimeSeries.make_uniform(1.0/24.0,qDateTimeToExcel(ui->dateEditStart->dateTime()));
+        showGraph(UniformizedTimeSeries);
+    }
+    else
+    {
+        QMessageBox::warning(this,
+            "Warning",
+            "No data was downloaded!");
+    }
 }
 
 void HydroDownloaderDlg::on_Date_Changed()
