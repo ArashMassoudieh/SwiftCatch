@@ -18,6 +18,8 @@
 #include "GeoDataModel.h"
 #include "MapDialog.h"
 
+using namespace QtCharts;
+
 //QT_CHARTS_USE_NAMESPACE
 
 HydroDownloaderDlg::HydroDownloaderDlg(QWidget *parent) :

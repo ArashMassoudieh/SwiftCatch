@@ -188,43 +188,48 @@ public:
     }
     void AddLayer(PointGeoDataSet *geodataset, const QString& attributeKey = "")
     {
-        if (geodataset->count()==0)
+        if (geodataset->count() == 0)
             return;
+
         QMap<QString, QColor> colorMap;
         QMap<double, QColor> colorMapNumeric;
 
         for (const GeoDataEntry& feature : *geodataset) {
-            
             QString type = "Point";
 
             bool numeric_attribute = false;
-            if (feature.attributes[attributeKey].typeId()==QMetaType::Int || feature.attributes[attributeKey].typeId() == QMetaType::Double)
+
+    #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            int variantType = feature.attributes[attributeKey].typeId();
+            if (variantType == QMetaType::Int || variantType == QMetaType::Double)
+    #else
+            int variantType = feature.attributes[attributeKey].type();
+            if (variantType == QVariant::Int || variantType == QVariant::Double)
+    #endif
                 numeric_attribute = true;
+
             QString attributeValueStr = feature.attributes[attributeKey].toString();
-            double attributeValue = feature.attributes[attributeKey].toDouble();
+            double attributeValue     = feature.attributes[attributeKey].toDouble();
+
             // Generate or retrieve a random color for the attribute
             QColor featureColor = Qt::transparent;
-            if (!numeric_attribute)
-            {
+            if (!numeric_attribute) {
                 if (!colorMap.contains(attributeValueStr)) {
                     colorMap[attributeValueStr] = generateRandomColor();
                 }
                 featureColor = colorMap[attributeValueStr];
-            }
-            else
-            {
+            } else {
                 if (!colorMapNumeric.contains(attributeValue)) {
                     colorMapNumeric[attributeValue] = generateRandomColor();
                 }
                 featureColor = colorMapNumeric[attributeValue];
             }
-    
+
             double lon = feature.location[0].x();
             double lat = feature.location[0].y();
             AddPoint(lon, lat, featureColor);
-                
-            
         }
+
         zoomExtend();
     }
     
