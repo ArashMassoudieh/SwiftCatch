@@ -88,3 +88,16 @@ PointGeoDataSet::PointGeoDataSet(const QMap<QString, station_info>& geodataset)
     
 }
 
+QMap<QString, station_info> filterStationsByType(const QMap<QString, station_info>& stations,
+                                                 const QString& siteType)
+{
+    QMap<QString, station_info> filtered;
+
+    for (auto it = stations.constBegin(); it != stations.constEnd(); ++it) {
+        if (it.value().site_tp_cd == siteType) {
+            filtered.insert(it.key(), it.value());
+        }
+    }
+
+    return filtered;
+}

@@ -76,4 +76,8 @@ public:
     
     
 };
+
+QMap<QString, station_info> filterStationsByType(const QMap<QString, station_info>& stations,
+                                                 const QString& siteType);
+
 #endif

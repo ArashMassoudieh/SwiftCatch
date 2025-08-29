@@ -96,9 +96,10 @@ void HydroDownloaderDlg::on_State_Changed()
     HydroDownloader hydrodowloader;
     stations.clear();
     stations = hydrodowloader.fetchAllHydroStations(ui->StatescomboBox->currentText());
-    PointGeoDataSet *pointgeodata = new PointGeoDataSet(stations);
+    QMap<QString, station_info> stations_only_streams = filterStationsByType(stations,"ST");
+    PointGeoDataSet *pointgeodata = new PointGeoDataSet(stations_only_streams);
     GeoDataModel* pointgeodatamodel = new GeoDataModel(pointgeodata);
-    for (const QString& key : stations.keys())
+    for (const QString& key : stations_only_streams.keys())
         ui->SelectStationcomboBox->addItem(key);
     ui->SelectStationcomboBox->setEnabled(true);
     TableViewer *tableviewer = new TableViewer();
