@@ -26,7 +26,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>33</height>
+     <height>23</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuData">
@@ -36,9 +36,11 @@
     <addaction name="actionUpload_flow_data"/>
     <addaction name="actionDownload_Weather_Data"/>
     <addaction name="actionDownload_GeoTiff"/>
+    <addaction name="actionLoad_GeoTiff"/>
     <addaction name="actionUniformize_Flow_and_Rain"/>
     <addaction name="actionRead_Weather_Data"/>
     <addaction name="actionSelect_Area"/>
+    <addaction name="separator"/>
    </widget>
    <addaction name="menuData"/>
   </widget>
@@ -71,6 +73,11 @@
   <action name="actionSelect_Area">
    <property name="text">
     <string>Select Area</string>
+   </property>
+  </action>
+  <action name="actionLoad_GeoTiff">
+   <property name="text">
+    <string>Load GeoTiff</string>
    </property>
   </action>
  </widget>

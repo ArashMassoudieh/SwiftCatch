@@ -19,8 +19,6 @@
 #include "MapDialog.h"
 #include "QMessageBox"
 
-using namespace QtCharts;
-
 //QT_CHARTS_USE_NAMESPACE
 
 HydroDownloaderDlg::HydroDownloaderDlg(QWidget *parent) :

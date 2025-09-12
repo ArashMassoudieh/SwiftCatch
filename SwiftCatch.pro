@@ -19,6 +19,7 @@ SOURCES += \
     Utilities/QuickSort.cpp \
     Utilities/Utilities.cpp \
     geodatadownloader.cpp \
+    geotiffhandler.cpp \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \
     main.cpp \
@@ -41,6 +42,7 @@ HEADERS += \
     Utilities/QuickSort.h \
     Utilities/Utilities.h \
     geodatadownloader.h \
+    geotiffhandler.h \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
     mainwindow.h \

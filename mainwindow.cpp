@@ -6,6 +6,8 @@
 #include "weatherdata.h"
 #include "QFileDialog"
 #include "MapDialog.h"
+#include "geotiffhandler.h"
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -18,6 +20,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionUniformize_Flow_and_Rain, SIGNAL(triggered()),this,SLOT(on_Uniformized()));
     connect(ui->actionRead_Weather_Data, SIGNAL(triggered()),this,SLOT(on_ReadWeatherData()));
     connect(ui->actionSelect_Area, SIGNAL(triggered()), this, SLOT(on_Select_Area()));
+    connect(ui->actionLoad_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Load_GeoTIFF()));
 
 }
 
@@ -58,6 +61,41 @@ void MainWindow::on_Download_GeoTIFF()
     geodatadownloader.computeFlowDirection(demDataset, "flow_direction.tiff");
 
     GDALClose(demDataset);
+
+}
+
+void MainWindow::on_Load_GeoTIFF()
+{
+    QString fileName = QFileDialog::getOpenFileName(
+        nullptr,
+        "Select a GeoTIFF File",
+        "",
+        "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
+        );
+
+    if (fileName.isEmpty()) {
+        QMessageBox::warning(nullptr, "No File", "No GeoTIFF file was selected.");
+        return;
+    }
+
+    try {
+        GeoTiffHandler tif(fileName.toStdString());
+
+        QString info = QString(
+                           "File: %1\nWidth: %2\nHeight: %3\nBands: %4\nMin: %5\nMax: %6"
+                           ).arg(fileName)
+                           .arg(tif.width())
+                           .arg(tif.height())
+                           .arg(tif.bands())
+                           .arg(tif.minValue())
+                           .arg(tif.maxValue());
+
+        QMessageBox::information(nullptr, "GeoTIFF Info", info);
+    }
+    catch (std::exception& e) {
+        QMessageBox::critical(nullptr, "Error", e.what());
+    }
+
 
 }
 
