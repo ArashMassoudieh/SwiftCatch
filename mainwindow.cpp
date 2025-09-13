@@ -91,6 +91,30 @@ void MainWindow::on_Load_GeoTIFF()
                            .arg(tif.maxValue());
 
         QMessageBox::information(nullptr, "GeoTIFF Info", info);
+
+        QString outputfileName = QFileDialog::getSaveFileName(
+            nullptr,
+            "Select a GeoTIFF File",
+            "",
+            "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
+            );
+
+        GeoTiffHandler low_res_tif = tif.resample(100,100);
+        low_res_tif.saveAs(outputfileName.toStdString());
+
+        low_res_tif.saveAsAscii(QString(outputfileName.remove(".tif")+".txt").toStdString());
+
+        GeoTiffHandler watershed = low_res_tif.watershedD4(50,50);
+
+        QString outputfileNameWatershed = QFileDialog::getSaveFileName(
+            nullptr,
+            "Select a GeoTIFF File",
+            "",
+            "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
+            );
+
+        watershed.saveAs(outputfileNameWatershed.toStdString());
+
     }
     catch (std::exception& e) {
         QMessageBox::critical(nullptr, "Error", e.what());
