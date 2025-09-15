@@ -104,7 +104,9 @@ void MainWindow::on_Load_GeoTIFF()
 
         low_res_tif.saveAsAscii(QString(outputfileName.remove(".tif")+".txt").toStdString());
 
-        GeoTiffHandler watershed = low_res_tif.watershedD4(50,50);
+        pair<int, int> coordinate = low_res_tif.indicesAt(-77.054676,38.915636);
+
+        GeoTiffHandler watershed = low_res_tif.watershedWithThreshold(coordinate.first,coordinate.second, 10, FlowDirType::D8);
 
         QString outputfileNameWatershed = QFileDialog::getSaveFileName(
             nullptr,

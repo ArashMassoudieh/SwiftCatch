@@ -13,6 +13,9 @@
  * pixel values, spatial coordinates, and metadata. Data are stored in both
  * a flat 1D vector and a 2D grid for convenience.
  */
+
+enum class FlowDirType { D4, D8 };
+
 class GeoTiffHandler {
 public:
     /**
@@ -261,15 +264,17 @@ public:
      */
     void computeFlowAccum(int maxIter = 1000);
 
-    /** @name Flow Routing (D4) */
+    /** @name Flow Routing */
     ///@{
     /**
-     * @brief Find the steepest downslope neighbor using D4 (N, S, E, W).
+     * @brief Find the steepest downslope neighbor.
      * @param i Column index of the cell.
      * @param j Row index of the cell.
-     * @return Pair (ni, nj) of downslope neighbor, or (-1,-1) if no downslope.
+     * @param type Neighborhood type: FlowDirType::D4 (N, S, E, W) or FlowDirType::D8 (diagonals included).
+     * @return Pair (ni, nj) of downslope neighbor, or (-1,-1) if no downslope neighbor exists (pit/flat).
      */
-    std::pair<int,int> downslopeD4(int i, int j) const;
+    std::pair<int,int> downslope(int i, int j, FlowDirType type = FlowDirType::D4) const;
+
 
     /**
      * @brief Check if cell (i0,j0) eventually drains to target cell (itarget,jtarget).
@@ -280,17 +285,31 @@ public:
      * @param jtarget Row index of target cell.
      * @return True if source drains to target, false otherwise.
      */
-    bool drainsToD4(int i0, int j0, int itarget, int jtarget) const;
+    bool drainsTo(int i0, int j0, int itarget, int jtarget, FlowDirType type) const;
     ///@}
 
     /**
-     * @brief Extract watershed (upslope area) draining to a target cell using D4 flow routing.
+     * @brief Extract watershed (upslope area) draining to a target cell.
      * @param itarget Target cell column index.
      * @param jtarget Target cell row index.
-     * @return New GeoTiffHandler containing only the watershed region,
-     *         cropped to bounding box. Pixels outside watershed are NaN.
+     * @param type Neighborhood type (D4 or D8).
+     * @return New GeoTiffHandler cropped to bounding box of watershed.
+     *         Inside watershed = DEM values, outside = NaN.
      */
-    GeoTiffHandler watershedD4(int itarget, int jtarget) const;
+    GeoTiffHandler watershed(int itarget, int jtarget, FlowDirType type = FlowDirType::D4) const;
+
+    /**
+     * @brief Compute the watershed for a target cell. If its size exceeds minSize,
+     *        return it immediately. Otherwise, evaluate all D8 neighbors and return
+     *        the watershed (among target + neighbors) with the maximum number of pixels.
+     * @param i Target column index.
+     * @param j Target row index.
+     * @param minSize Minimum acceptable number of pixels in the watershed.
+     * @param type Flow direction type (D4 or D8) used for delineating watersheds.
+     * @return The selected watershed (GeoTiffHandler).
+     */
+    GeoTiffHandler watershedWithThreshold(int i, int j, int minSize, FlowDirType type) const;
+
 
     /** @name Cell Value Queries */
     ///@{

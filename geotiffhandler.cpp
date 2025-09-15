@@ -7,9 +7,21 @@
 #include <iomanip>
 #include <set>       // for visited tracking in drainsToD4
 #include <queue>
+#include <tuple>
+#include <limits>
+#include <iomanip>
+#include <cmath>
 
 static const int di[4] = {  1, -1,  0,  0 };
 static const int dj[4] = {  0,  0,  1, -1 };
+
+static const std::vector<std::pair<int,int>> dirsD4 = {
+    {1,0}, {-1,0}, {0,1}, {0,-1}
+};
+static const std::vector<std::pair<int,int>> dirsD8 = {
+    {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,1}, {1,-1}, {-1,-1}
+};
+
 
 GeoTiffHandler::GeoTiffHandler(const std::string& filename)
     : filename_(filename), dataset_(nullptr), width_(0), height_(0), bands_(0),
@@ -47,20 +59,13 @@ GeoTiffHandler::GeoTiffHandler(const std::string& filename)
     // Extract geotransform for dx, dy and coordinate arrays
     double gt[6];
     if (dataset_->GetGeoTransform(gt) == CE_None) {
-        dx_ = gt[1];   // pixel size in x
-        dy_ = gt[5];   // pixel size in y (often negative)
+        dx_ = gt[1];
+        dy_ = gt[5]; // typically negative for north-up
 
-        // X coordinates
         x_.resize(width_);
-        for (int i = 0; i < width_; ++i) {
-            x_[i] = gt[0] + i * dx_;
-        }
-
-        // Y coordinates
+        for (int i = 0; i < width_; ++i) x_[i] = gt[0] + (i + 0.5) * dx_;
         y_.resize(height_);
-        for (int j = 0; j < height_; ++j) {
-            y_[j] = gt[3] + j * dy_;
-        }
+        for (int j = 0; j < height_; ++j) y_[j] = gt[3] + (j + 0.5) * dy_;
     }
 }
 
@@ -276,14 +281,14 @@ void GeoTiffHandler::saveAs(const std::string& filename) const {
 
     // Construct geotransform
     double gt[6] = {0};
-    gt[0] = x_.front();   // top-left x
-    gt[1] = dx_;          // pixel size in x
-    gt[2] = 0.0;          // rotation
-    gt[3] = y_.front();   // top-left y
-    gt[4] = 0.0;          // rotation
-    gt[5] = dy_;          // pixel size in y (usually negative for north-up)
-
+    gt[0] = x_.front() - 0.5 * dx_;  // top-left corner x
+    gt[1] = dx_;
+    gt[2] = 0.0;
+    gt[3] = y_.front() - 0.5 * dy_;  // top-left corner y (note: dy may be negative)
+    gt[4] = 0.0;
+    gt[5] = dy_;
     outDs->SetGeoTransform(gt);
+
 
     // Copy projection if available
     if (dataset_) {
@@ -319,42 +324,33 @@ std::pair<int,int> GeoTiffHandler::indicesAt(double xCoord, double yCoord) const
         throw std::runtime_error("Coordinate arrays not initialized.");
     }
 
-    // Check bounds
-    if (xCoord < x_.front() || xCoord > x_.back() ||
-        (dy_ < 0 && (yCoord > y_.front() || yCoord < y_.back())) ||
-        (dy_ > 0 && (yCoord < y_.front() || yCoord > y_.back()))) {
+    // --- Check bounds ---
+    double xmin = x_.front();
+    double xmax = x_.back();
+    if (xmin > xmax) std::swap(xmin, xmax);
+
+    double ymin = std::min(y_.front(), y_.back());
+    double ymax = std::max(y_.front(), y_.back());
+
+    if (xCoord < xmin || xCoord > xmax || yCoord < ymin || yCoord > ymax) {
         throw std::out_of_range("Requested coordinate is outside raster extent.");
     }
 
-    // Find nearest i
-    auto itx = std::lower_bound(x_.begin(), x_.end(), xCoord);
-    int i = static_cast<int>(itx - x_.begin());
-    if (i > 0 && (i == width_ || (xCoord - x_[i-1] < x_[i] - xCoord))) {
-        i--; // pick closer index
-    }
+    // --- Nearest column index ---
+    double col = (xCoord - x_.front()) / dx_;   // dx_ may be negative
+    int i = static_cast<int>(std::round(col));
+    if (i < 0) i = 0;
+    if (i >= width_) i = width_ - 1;
 
-    // Find nearest j (accounting for dy sign)
-    int j;
-    if (dy_ < 0) {
-        // y decreases downward
-        auto ity = std::lower_bound(y_.rbegin(), y_.rend(), yCoord,
-                                    [](double a, double b){ return a > b; });
-        j = static_cast<int>(height_ - 1 - (ity - y_.rbegin()));
-    } else {
-        auto ity = std::lower_bound(y_.begin(), y_.end(), yCoord);
-        j = static_cast<int>(ity - y_.begin());
-        if (j > 0 && (j == height_ || (yCoord - y_[j-1] < y_[j] - yCoord))) {
-            j--;
-        }
-    }
+    // --- Nearest row index ---
+    double row = (yCoord - y_.front()) / dy_;   // dy_ may be negative
+    int j = static_cast<int>(std::round(row));
+    if (j < 0) j = 0;
+    if (j >= height_) j = height_ - 1;
 
     return {i, j};
 }
 
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-#include <cmath>
 
 void GeoTiffHandler::saveAsAscii(const std::string& filename, double nodata) const {
     if (data_2d_.empty() || x_.empty() || y_.empty())
@@ -436,14 +432,16 @@ void GeoTiffHandler::loadFromAscii(const std::string& filename) {
 }
 
 
-std::pair<int,int> GeoTiffHandler::downslopeD4(int i, int j) const {
+std::pair<int,int> GeoTiffHandler::downslope(int i, int j, FlowDirType type) const {
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
     double z = data_2d_[i][j];
     int bestI = -1, bestJ = -1;
     double maxDrop = 0.0;
 
-    for (int k = 0; k < 4; ++k) {
-        int ni = i + di[k];
-        int nj = j + dj[k];
+    for (auto [di,dj] : dirs) {
+        int ni = i + di;
+        int nj = j + dj;
         if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
 
         double dz = z - data_2d_[ni][nj];
@@ -453,57 +451,38 @@ std::pair<int,int> GeoTiffHandler::downslopeD4(int i, int j) const {
             bestJ = nj;
         }
     }
-
-    return {bestI, bestJ}; // (-1,-1) if no downslope neighbor (pit/flat)
+    return {bestI,bestJ};  // (-1,-1) if no downslope neighbor
 }
 
-bool GeoTiffHandler::drainsToD4(int i0, int j0, int itarget, int jtarget) const {
+
+bool GeoTiffHandler::drainsTo(int i0, int j0, int itarget, int jtarget, FlowDirType type) const {
     int ci = i0, cj = j0;
     std::set<std::pair<int,int>> visited; // avoid infinite loops
 
     while (true) {
         if (ci == itarget && cj == jtarget) return true;
-        if (visited.count({ci,cj})) return false; // loop
+        if (visited.count({ci,cj})) return false; // loop detected
         visited.insert({ci,cj});
 
-        auto [ni,nj] = downslopeD4(ci, cj);
+        auto [ni, nj] = downslope(ci, cj, type);
         if (ni == -1) return false; // pit or flat → doesn’t reach target
         ci = ni;
         cj = nj;
     }
 }
 
-GeoTiffHandler GeoTiffHandler::watershedD4(int itarget, int jtarget) const {
-    // Step 1. Compute flow directions
+
+GeoTiffHandler GeoTiffHandler::watershed(int itarget, int jtarget, FlowDirType type) const {
     auto idx = [&](int i, int j){ return j * width_ + i; };
 
-    std::vector<std::pair<int,int>> downslope(width_ * height_, {-1,-1});
     std::vector<std::vector<std::vector<std::pair<int,int>>>> inflow(
         width_, std::vector<std::vector<std::pair<int,int>>>(height_));
 
-    static const int di[4] = { 1, -1, 0, 0 };
-    static const int dj[4] = { 0, 0, 1, -1 };
-
+    // Build inflow graph
     for (int i = 0; i < width_; ++i) {
         for (int j = 0; j < height_; ++j) {
-            double z = data_2d_[i][j];
-            int bestI = -1, bestJ = -1;
-            double maxDrop = 0.0;
-
-            for (int k = 0; k < 4; ++k) {
-                int ni = i + di[k];
-                int nj = j + dj[k];
-                if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
-                double dz = z - data_2d_[ni][nj];
-                if (dz > maxDrop) {
-                    maxDrop = dz;
-                    bestI = ni; bestJ = nj;
-                }
-            }
-            downslope[idx(i,j)] = {bestI, bestJ};
-            if (bestI != -1) {
-                inflow[bestI][bestJ].push_back({i,j});
-            }
+            auto [ni,nj] = downslope(i,j,type);
+            if (ni != -1) inflow[ni][nj].push_back({i,j});
         }
     }
 
@@ -538,16 +517,20 @@ GeoTiffHandler GeoTiffHandler::watershedD4(int itarget, int jtarget) const {
     int newW = maxI - minI + 1;
     int newH = maxJ - minJ + 1;
 
-    GeoTiffHandler out(newW, newH); // use in-memory constructor (not file-based)
+    GeoTiffHandler out(newW, newH); // in-memory constructor
 
     out.dx_ = dx_;
     out.dy_ = dy_;
 
-    // coordinates (centers)
+    // Rebuild coordinates as cell centers
     out.x_.resize(newW);
+    for (int ii = 0; ii < newW; ++ii) {
+        out.x_[ii] = x_[minI] + (ii * dx_);
+    }
     out.y_.resize(newH);
-    for (int i = 0; i < newW; ++i) out.x_[i] = x_[minI] + i * dx_;
-    for (int j = 0; j < newH; ++j) out.y_[j] = y_[minJ] + j * dy_;
+    for (int jj = 0; jj < newH; ++jj) {
+        out.y_[jj] = y_[minJ] + (jj * dy_);
+    }
 
     out.data_2d_.assign(newW, std::vector<double>(newH, std::nan("")));
     out.data_.resize(newW * newH);
@@ -568,8 +551,7 @@ GeoTiffHandler GeoTiffHandler::watershedD4(int itarget, int jtarget) const {
     return out;
 }
 
-#include <tuple>
-#include <limits>
+
 
 std::tuple<int,int,double> GeoTiffHandler::maxCell() const {
     int bestI = -1, bestJ = -1;
@@ -643,4 +625,42 @@ std::pair<int,int> GeoTiffHandler::minCellIndex() const {
     return {bestI, bestJ};
 }
 
+GeoTiffHandler GeoTiffHandler::watershedWithThreshold(int i, int j, int minSize, FlowDirType type) const {
+    // Always use D8 neighbors for search
+    static const std::vector<std::pair<int,int>> dirsD8 = {
+        {0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,1}, {1,-1}, {-1,-1}
+    };
 
+    GeoTiffHandler best(1,1); // dummy init
+    int bestCount = -1;
+
+    for (auto [di, dj] : dirsD8) {
+        int ni = i + di;
+        int nj = j + dj;
+        if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
+
+        GeoTiffHandler candidate = watershed(ni, nj, type);
+
+        // Count valid pixels
+        int ccount = 0;
+        for (int ii = 0; ii < candidate.width(); ++ii) {
+            for (int jj = 0; jj < candidate.height(); ++jj) {
+                if (!std::isnan(candidate.data_2d_[ii][jj])) {
+                    ++ccount;
+                }
+            }
+        }
+
+        // If the target watershed already meets threshold, return immediately
+        if (di == 0 && dj == 0 && ccount >= minSize) {
+            return candidate;
+        }
+
+        if (ccount > bestCount) {
+            best = std::move(candidate);
+            bestCount = ccount;
+        }
+    }
+
+    return best; // largest among neighbors if threshold not met
+}
