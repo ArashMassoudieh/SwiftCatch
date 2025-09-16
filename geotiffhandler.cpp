@@ -912,3 +912,107 @@ Path GeoTiffHandler::downstreamPath(int i0, int j0, FlowDirType type) const {
     return path;
 }
 
+GeoTiffHandler GeoTiffHandler::detectSinks(FlowDirType type) const {
+    // Prepare output raster with same dimensions
+    GeoTiffHandler out(width_, height_);
+    out.dx_ = dx_;
+    out.dy_ = dy_;
+    out.x_ = x_;
+    out.y_ = y_;
+    out.data_2d_.assign(width_, std::vector<double>(height_, 0.0));
+    out.data_.assign(width_ * height_, 0.0f);
+
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
+    for (int i = 1; i < width_ - 1; ++i) {        // skip boundary cols
+        for (int j = 1; j < height_ - 1; ++j) {   // skip boundary rows
+            double z = data_2d_[i][j];
+            if (std::isnan(z)) continue; // skip nodata
+
+            bool isSink = true;
+            for (auto [di, dj] : dirs) {
+                int ni = i + di;
+                int nj = j + dj;
+                double zn = data_2d_[ni][nj];
+                if (std::isnan(zn)) continue;
+
+                if (z >= zn) { // not strictly lower
+                    isSink = false;
+                    break;
+                }
+            }
+
+            if (isSink) {
+                out.data_2d_[i][j] = 1.0;
+                out.data_[j * width_ + i] = 1.0f;
+            }
+        }
+    }
+
+    return out;
+}
+
+GeoTiffHandler GeoTiffHandler::fillSinksIterative(FlowDirType type, int maxIter) const {
+    // Start with a copy of current DEM
+    GeoTiffHandler out(*this);
+    out.data_2d_ = data_2d_;
+    out.data_    = data_;
+
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
+    bool changed = true;
+    int iter = 0;
+
+    while (changed && iter < maxIter) {
+        changed = false;
+        ++iter;
+
+        for (int i = 1; i < width_ - 1; ++i) {        // skip boundary
+            for (int j = 1; j < height_ - 1; ++j) {   // skip boundary
+                double z = out.data_2d_[i][j];
+                if (std::isnan(z)) continue;
+
+                bool isSink = true;
+                double sum = 0.0;
+                int count = 0;
+
+                for (auto [di, dj] : dirs) {
+                    int ni = i + di;
+                    int nj = j + dj;
+                    double zn = out.data_2d_[ni][nj];
+                    if (std::isnan(zn)) continue;
+
+                    if (z >= zn) {
+                        isSink = false;
+                        break;
+                    }
+                    sum += zn;
+                    count++;
+                }
+
+                if (isSink && count > 0) {
+                    double newVal = sum / count;
+                    if (newVal > z) {
+                        out.data_2d_[i][j] = newVal;
+                        out.data_[j * width_ + i] = static_cast<float>(newVal);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    return out;
+}
+
+int GeoTiffHandler::countValidCells() const {
+    int count = 0;
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            if (!std::isnan(data_2d_[i][j])) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}

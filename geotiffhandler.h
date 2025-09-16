@@ -358,6 +358,34 @@ public:
     QString info(const QString& fileName) const;
 
 
+    /**
+     * @brief Detect single-pixel sinks in the DEM.
+     *
+     * A sink pixel is defined as one whose elevation is strictly less than all
+     * of its valid neighbors (D4 or D8).
+     *
+     * @param type Neighborhood type: FlowDirType::D4 or FlowDirType::D8.
+     * @return A new GeoTiffHandler object where sinks are marked as 1.0, others as 0.0.
+     */
+    GeoTiffHandler detectSinks(FlowDirType type = FlowDirType::D8) const;
+
+    /**
+     * @brief Iteratively fill single-pixel sinks by replacing them with the average of their neighbors.
+     *
+     * Boundary pixels are never modified. Iterates until no sinks remain or maxIter is reached.
+     *
+     * @param type Neighborhood type: FlowDirType::D4 or FlowDirType::D8.
+     * @param maxIter Maximum iterations (default 1000).
+     * @return A new GeoTiffHandler object with sinks filled.
+     */
+    GeoTiffHandler fillSinksIterative(FlowDirType type = FlowDirType::D8, int maxIter = 1000) const;
+
+    /**
+     * @brief Count the number of non-NaN cells in the raster.
+     * @return Number of valid cells.
+     */
+    int countValidCells() const;
+
 private:
     std::string filename_;   ///< Path to the GeoTIFF file.
     GDALDataset* dataset_;   ///< GDAL dataset handle.

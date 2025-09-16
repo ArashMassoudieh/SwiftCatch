@@ -67,33 +67,53 @@ void MainWindow::on_Download_GeoTIFF()
 
 void MainWindow::on_Load_GeoTIFF()
 {
-    QString fileName = getFileNameWithExtension(this,"DEM","/home/arash/Projects/DCDEM/","",DialogMode::Save,"tif");
+    QString fileName = getFileNameWithExtension(this,"DEM","","",DialogMode::Open,"tif");
+
+    QFileInfo info(fileName);
+    QString folderPath = info.absolutePath() + "/";
+
     GeoTiffHandler dem(fileName.toStdString());
 
-    pair<int,int> highestpoint = dem.maxCellIndex();
+    //resampling
+    GeoTiffHandler dem_resampled = dem.resample(100,100);
 
-    Path path = dem.downstreamPath(highestpoint.first, highestpoint.second,FlowDirType::D8);
+    dem_resampled.saveAs(folderPath.toStdString() + "dem_resampled.tif");
 
-    path.saveAsGeoJSON("/home/arash/Projects/DCDEM/dem.geojson");
+    dem_resampled.saveAsAscii(folderPath.toStdString() + "dem_resampled.asc",-9999);
 
-    dem.saveAsAscii("/home/arash/Projects/DCDEM/dem.asc",-9999);
-    // Select target cell with value = 9
-    pair<int,int> ID = dem.indicesAt(-77.055615,38.917401);
+    // Sinks
+    GeoTiffHandler sinks = dem_resampled.detectSinks(FlowDirType::D8);
+
+    sinks.saveAs(folderPath.toStdString() + "sinks.tiff");
+
+    GeoTiffHandler sinks_filled = dem_resampled.fillSinksIterative(FlowDirType::D8);
+
+    sinks_filled.saveAs(folderPath.toStdString() + "sinksfilled.tiff");
+
+    //pair<int,int> highestpoint = dem_resampled.maxCellIndex();
+    pair<int,int> highestpoint = sinks_filled.indicesAt(-77.008238, 39.003033);
+    Path path = sinks_filled.downstreamPath(highestpoint.first, highestpoint.second,FlowDirType::D8);
+
+    path.saveAsGeoJSON(folderPath +  "path.geojson");
+
+    pair<int,int> ID = sinks_filled.minCellIndex();
 
     qDebug()<<"IDs: " << ID;
     // Compute watershed
 
 
-    GeoTiffHandler ws = dem.watershedMFD(ID.first, ID.second, FlowDirType::D8);
+    pair<int,int> pourpoint = sinks_filled.indicesAt(-76.986683, 38.976667);
+
+    GeoTiffHandler ws = sinks_filled.watershedMFD(pourpoint.first, pourpoint.second, FlowDirType::D8);
 
     // Save masked watershed
-    ws.saveAsAscii("/home/arash/Projects/DCDEM/watershed_masked_9.asc", -9999.0);
-    ws.saveAs("/home/arash/Projects/DCDEM/watershed_masked_9.tif");
+    ws.saveAsAscii(folderPath.toStdString() + "watershed_masked.asc", -9999.0);
+    ws.saveAs(folderPath.toStdString() + "watershed_masked.tif");
 
     // Crop watershed
     GeoTiffHandler wsCrop = ws.cropMasked(-9999);
-    wsCrop.saveAsAscii("/home/arash/Projects/DCDEM/watershed_cropped_9.asc", -9999.0);
-    wsCrop.saveAs("/home/arash/Projects/DCDEM/watershed_cropped_9.tif");
+    wsCrop.saveAsAscii(folderPath.toStdString() + "watershed_cropped_9.asc", -9999.0);
+    wsCrop.saveAs(folderPath.toStdString() + "watershed_cropped.tif");
 
 }
 
