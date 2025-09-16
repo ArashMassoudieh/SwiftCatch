@@ -8,6 +8,7 @@
 #include "MapDialog.h"
 #include "geotiffhandler.h"
 #include <QMessageBox>
+#include "path.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -66,62 +67,33 @@ void MainWindow::on_Download_GeoTIFF()
 
 void MainWindow::on_Load_GeoTIFF()
 {
-    QString fileName = QFileDialog::getOpenFileName(
-        nullptr,
-        "Select a GeoTIFF File",
-        "",
-        "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
-        );
+    QString fileName = getFileNameWithExtension(this,"DEM","/home/arash/Projects/DCDEM/","",DialogMode::Save,"tif");
+    GeoTiffHandler dem(fileName.toStdString());
 
-    if (fileName.isEmpty()) {
-        QMessageBox::warning(nullptr, "No File", "No GeoTIFF file was selected.");
-        return;
-    }
+    pair<int,int> highestpoint = dem.maxCellIndex();
 
-    try {
-        GeoTiffHandler tif(fileName.toStdString());
+    Path path = dem.downstreamPath(highestpoint.first, highestpoint.second,FlowDirType::D8);
 
-        QString info = QString(
-                           "File: %1\nWidth: %2\nHeight: %3\nBands: %4\nMin: %5\nMax: %6"
-                           ).arg(fileName)
-                           .arg(tif.width())
-                           .arg(tif.height())
-                           .arg(tif.bands())
-                           .arg(tif.minValue())
-                           .arg(tif.maxValue());
+    path.saveAsGeoJSON("/home/arash/Projects/DCDEM/dem.geojson");
 
-        QMessageBox::information(nullptr, "GeoTIFF Info", info);
+    dem.saveAsAscii("/home/arash/Projects/DCDEM/dem.asc",-9999);
+    // Select target cell with value = 9
+    pair<int,int> ID = dem.indicesAt(-77.055615,38.917401);
 
-        QString outputfileName = QFileDialog::getSaveFileName(
-            nullptr,
-            "Select a GeoTIFF File",
-            "",
-            "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
-            );
+    qDebug()<<"IDs: " << ID;
+    // Compute watershed
 
-        GeoTiffHandler low_res_tif = tif.resample(100,100);
-        low_res_tif.saveAs(outputfileName.toStdString());
 
-        low_res_tif.saveAsAscii(QString(outputfileName.remove(".tif")+".txt").toStdString());
+    GeoTiffHandler ws = dem.watershedMFD(ID.first, ID.second, FlowDirType::D8);
 
-        pair<int, int> coordinate = low_res_tif.indicesAt(-77.054676,38.915636);
+    // Save masked watershed
+    ws.saveAsAscii("/home/arash/Projects/DCDEM/watershed_masked_9.asc", -9999.0);
+    ws.saveAs("/home/arash/Projects/DCDEM/watershed_masked_9.tif");
 
-        GeoTiffHandler watershed = low_res_tif.watershedWithThreshold(coordinate.first,coordinate.second, 10, FlowDirType::D8);
-
-        QString outputfileNameWatershed = QFileDialog::getSaveFileName(
-            nullptr,
-            "Select a GeoTIFF File",
-            "",
-            "GeoTIFF Files (*.tif *.tiff);;All Files (*)"
-            );
-
-        watershed.saveAs(outputfileNameWatershed.toStdString());
-
-    }
-    catch (std::exception& e) {
-        QMessageBox::critical(nullptr, "Error", e.what());
-    }
-
+    // Crop watershed
+    GeoTiffHandler wsCrop = ws.cropMasked(-9999);
+    wsCrop.saveAsAscii("/home/arash/Projects/DCDEM/watershed_cropped_9.asc", -9999.0);
+    wsCrop.saveAs("/home/arash/Projects/DCDEM/watershed_cropped_9.tif");
 
 }
 

@@ -11,6 +11,7 @@
 #include <limits>
 #include <iomanip>
 #include <cmath>
+#include "path.h"
 
 static const int di[4] = {  1, -1,  0,  0 };
 static const int dj[4] = {  0,  0,  1, -1 };
@@ -74,9 +75,21 @@ GeoTiffHandler::GeoTiffHandler(int width, int height)
     width_(width), height_(height), bands_(1),
     dx_(0.0), dy_(0.0)
 {
+    GDALAllRegister();
     data_.resize(width * height, 0.0f);
     data_2d_.assign(width, std::vector<double>(height, 0.0));
 }
+
+GeoTiffHandler::GeoTiffHandler()
+    : filename_(""), dataset_(nullptr),
+    width_(1), height_(1), bands_(1),
+    dx_(0.0), dy_(0.0)
+{
+    GDALAllRegister();
+    data_.resize(1 * 1, 0.0f);
+    data_2d_.assign(1, std::vector<double>(1, 0.0));
+}
+
 
 // Copy constructor
 GeoTiffHandler::GeoTiffHandler(const GeoTiffHandler& other)
@@ -225,6 +238,7 @@ GeoTiffHandler GeoTiffHandler::resample(int newNx, int newNy) const {
 
     out.dx_ = (xmax - xmin) / (newNx - 1);
     out.dy_ = (ymax - ymin) / (newNy - 1);
+    if (dy_ < 0) out.dy_ = -out.dy_;
 
     // New coordinate vectors
     out.x_.resize(newNx);
@@ -233,7 +247,11 @@ GeoTiffHandler GeoTiffHandler::resample(int newNx, int newNy) const {
         out.x_[i] = xmin + i * out.dx_;
     }
     for (int j = 0; j < newNy; ++j) {
-        out.y_[j] = ymin + j * out.dy_;
+        if (dy_ < 0) {
+            out.y_[j] = ymax + j * out.dy_;  // Start from ymax for north-up rasters
+        } else {
+            out.y_[j] = ymin + j * out.dy_;  // Start from ymin for south-up rasters
+        }
     }
 
     // Allocate new 2D data
@@ -356,31 +374,23 @@ void GeoTiffHandler::saveAsAscii(const std::string& filename, double nodata) con
     if (data_2d_.empty() || x_.empty() || y_.empty())
         throw std::runtime_error("No data to save to ASCII.");
 
-    std::ofstream out(filename, std::ios::out);  // text mode, not binary
+    std::ofstream out(filename, std::ios::out);
     if (!out)
         throw std::runtime_error("Failed to open ASCII file for writing: " + filename);
 
-    // ESRI ASCII Grid header
     out << "ncols " << width_ << "\n";
     out << "nrows " << height_ << "\n";
-
-    double xll = x_.front() - dx_ / 2.0;
-    double yll = (dy_ > 0 ? y_.front() : y_.back()) - std::abs(dy_) / 2.0;
-
-    out << "xllcorner " << xll << "\n";
-    out << "yllcorner " << yll << "\n";
-    out << "cellsize " << std::abs(dx_) << "\n";  // assume square pixels
+    out << "xllcorner " << (x_.front() - dx_ / 2.0) << "\n";
+    out << "yllcorner " << (*std::min_element(y_.begin(), y_.end()) - std::abs(dy_) / 2.0) << "\n";
+    out << "dx " << dx_ << "\n";
+    out << "dy " << dy_ << "\n";
     out << "NODATA_value " << nodata << "\n";
 
-    // Write rows top → bottom (per ESRI spec)
-    out << std::fixed << std::setprecision(6);
+    out << std::fixed << std::setprecision(10);
     for (int j = height_ - 1; j >= 0; --j) {
         for (int i = 0; i < width_; ++i) {
             double v = data_2d_[i][j];
-            if (std::isnan(v))
-                out << nodata;
-            else
-                out << v;
+            out << (std::isnan(v) ? nodata : v);
             if (i < width_ - 1) out << " ";
         }
         out << "\n";
@@ -388,7 +398,7 @@ void GeoTiffHandler::saveAsAscii(const std::string& filename, double nodata) con
 }
 
 void GeoTiffHandler::loadFromAscii(const std::string& filename) {
-    std::ifstream in(filename, std::ios::in);  // text mode
+    std::ifstream in(filename, std::ios::in);
     if (!in)
         throw std::runtime_error("Failed to open ASCII file: " + filename);
 
@@ -404,10 +414,10 @@ void GeoTiffHandler::loadFromAscii(const std::string& filename) {
     in >> key >> nodata;
 
     dx_ = cellsize;
-    dy_ = -cellsize;   // north-up assumption
+    dy_ = -cellsize; // north-up assumption
     bands_ = 1;
 
-    // Build coordinate arrays (cell centers)
+    // Build coordinate arrays as cell centers
     x_.resize(width_);
     y_.resize(height_);
     for (int i = 0; i < width_; ++i)
@@ -419,7 +429,7 @@ void GeoTiffHandler::loadFromAscii(const std::string& filename) {
     data_2d_.assign(width_, std::vector<double>(height_, nodata));
     data_.resize(width_ * height_);
 
-    // Read values row by row, top → bottom
+    // Read values top → bottom
     for (int j = height_ - 1; j >= 0; --j) {
         for (int i = 0; i < width_; ++i) {
             double v;
@@ -475,14 +485,16 @@ bool GeoTiffHandler::drainsTo(int i0, int j0, int itarget, int jtarget, FlowDirT
 GeoTiffHandler GeoTiffHandler::watershed(int itarget, int jtarget, FlowDirType type) const {
     auto idx = [&](int i, int j){ return j * width_ + i; };
 
+    // Step 1. Build inflow adjacency
     std::vector<std::vector<std::vector<std::pair<int,int>>>> inflow(
         width_, std::vector<std::vector<std::pair<int,int>>>(height_));
 
-    // Build inflow graph
     for (int i = 0; i < width_; ++i) {
         for (int j = 0; j < height_; ++j) {
             auto [ni,nj] = downslope(i,j,type);
-            if (ni != -1) inflow[ni][nj].push_back({i,j});
+            if (ni != -1 && nj != -1) {
+                inflow[ni][nj].push_back({i,j});
+            }
         }
     }
 
@@ -493,44 +505,71 @@ GeoTiffHandler GeoTiffHandler::watershed(int itarget, int jtarget, FlowDirType t
     q.push({itarget, jtarget});
     visited[idx(itarget,jtarget)] = true;
 
-    int minI = itarget, maxI = itarget;
-    int minJ = jtarget, maxJ = jtarget;
-
     while (!q.empty()) {
         auto [ci, cj] = q.front(); q.pop();
-
-        minI = std::min(minI, ci);
-        maxI = std::max(maxI, ci);
-        minJ = std::min(minJ, cj);
-        maxJ = std::max(maxJ, cj);
 
         for (auto& nb : inflow[ci][cj]) {
             int ni = nb.first, nj = nb.second;
             if (!visited[idx(ni,nj)]) {
-                visited[idx(ni,nj)] = true;
-                q.push({ni,nj});
+                // only accept if this cell drains to the target
+                if (drainsTo(ni, nj, itarget, jtarget, type)) {
+                    visited[idx(ni,nj)] = true;
+                    q.push({ni,nj});
+                }
             }
         }
     }
 
-    // Step 3. Crop to bounding box
+    // Step 3. Build masked output (same size as input)
+    GeoTiffHandler out(*this); // copy metadata
+    out.data_2d_.assign(width_, std::vector<double>(height_, std::nan("")));
+    out.data_.assign(width_ * height_, std::nanf(""));
+
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            if (visited[idx(i,j)]) {
+                out.data_2d_[i][j] = data_2d_[i][j];
+                out.data_[j * width_ + i] = static_cast<float>(data_2d_[i][j]);
+            }
+        }
+    }
+
+    return out;
+}
+
+
+GeoTiffHandler GeoTiffHandler::cropMasked(double nodataThreshold) const {
+    int minI = width_, maxI = -1;
+    int minJ = height_, maxJ = -1;
+
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            double v = data_2d_[i][j];
+            if (!std::isnan(v) && v != nodataThreshold) {
+                minI = std::min(minI, i);
+                maxI = std::max(maxI, i);
+                minJ = std::min(minJ, j);
+                maxJ = std::max(maxJ, j);
+            }
+        }
+    }
+
+    if (minI > maxI || minJ > maxJ) {
+        throw std::runtime_error("No valid data to crop.");
+    }
+
     int newW = maxI - minI + 1;
     int newH = maxJ - minJ + 1;
 
-    GeoTiffHandler out(newW, newH); // in-memory constructor
-
+    GeoTiffHandler out(newW, newH);
     out.dx_ = dx_;
     out.dy_ = dy_;
 
-    // Rebuild coordinates as cell centers
     out.x_.resize(newW);
-    for (int ii = 0; ii < newW; ++ii) {
-        out.x_[ii] = x_[minI] + (ii * dx_);
-    }
+    for (int ii = 0; ii < newW; ++ii) out.x_[ii] = x_[minI + ii];
+
     out.y_.resize(newH);
-    for (int jj = 0; jj < newH; ++jj) {
-        out.y_[jj] = y_[minJ] + (jj * dy_);
-    }
+    for (int jj = 0; jj < newH; ++jj) out.y_[jj] = y_[minJ + jj];
 
     out.data_2d_.assign(newW, std::vector<double>(newH, std::nan("")));
     out.data_.resize(newW * newH);
@@ -539,12 +578,9 @@ GeoTiffHandler GeoTiffHandler::watershed(int itarget, int jtarget, FlowDirType t
         for (int j = minJ; j <= maxJ; ++j) {
             int ni = i - minI;
             int nj = j - minJ;
-            if (visited[idx(i,j)]) {
-                out.data_2d_[ni][nj] = data_2d_[i][j];
-            } else {
-                out.data_2d_[ni][nj] = std::nan("");
-            }
+            out.data_2d_[ni][nj] = data_2d_[i][j];
             out.data_[nj * newW + ni] = static_cast<float>(out.data_2d_[ni][nj]);
+
         }
     }
 
@@ -664,3 +700,215 @@ GeoTiffHandler GeoTiffHandler::watershedWithThreshold(int i, int j, int minSize,
 
     return best; // largest among neighbors if threshold not met
 }
+
+QString GeoTiffHandler::info(const QString& fileName) const {
+    double xmin = x_.empty() ? 0.0 : *std::min_element(x_.begin(), x_.end()) - 0.5 * dx_;
+    double xmax = x_.empty() ? 0.0 : *std::max_element(x_.begin(), x_.end()) + 0.5 * dx_;
+    double ymin = y_.empty() ? 0.0 : *std::min_element(y_.begin(), y_.end()) - 0.5 * std::abs(dy_);
+    double ymax = y_.empty() ? 0.0 : *std::max_element(y_.begin(), y_.end()) + 0.5 * std::abs(dy_);
+
+    QString infoStr = QString(
+                          "File: %1\n"
+                          "Width: %2\n"
+                          "Height: %3\n"
+                          "Bands: %4\n"
+                          "Min: %5\n"
+                          "Max: %6\n"
+                          "dx: %7\n"
+                          "dy: %8\n"
+                          "Bounds:\n"
+                          "  Xmin: %9\n"
+                          "  Xmax: %10\n"
+                          "  Ymin: %11\n"
+                          "  Ymax: %12\n")
+                          .arg(fileName.isEmpty() ? "(in-memory)" : fileName)
+                          .arg(width_)
+                          .arg(height_)
+                          .arg(bands_)
+                          .arg(minValue())
+                          .arg(maxValue())
+                          .arg(dx_)
+                          .arg(dy_)
+                          .arg(xmin)
+                          .arg(xmax)
+                          .arg(ymin)
+                          .arg(ymax);
+
+    // --- Add geotransform details if dataset_ exists ---
+    if (dataset_) {
+        double gt[6];
+        if (dataset_->GetGeoTransform(gt) == CE_None) {
+            infoStr += QString(
+                           "GeoTransform:\n"
+                           "  gt[0] (Top-left X): %1\n"
+                           "  gt[1] (Pixel width): %2\n"
+                           "  gt[2] (Row rotation): %3\n"
+                           "  gt[3] (Top-left Y): %4\n"
+                           "  gt[4] (Column rotation): %5\n"
+                           "  gt[5] (Pixel height): %6\n")
+                           .arg(gt[0]).arg(gt[1]).arg(gt[2])
+                           .arg(gt[3]).arg(gt[4]).arg(gt[5]);
+        }
+    }
+
+    return infoStr;
+}
+
+// --- MFD inflow construction ---
+std::vector<std::vector<std::vector<std::pair<int,int>>>> GeoTiffHandler::buildInflowMFD(
+    const std::vector<std::vector<double>>& dem,
+    int width, int height,
+    FlowDirType type)
+{
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
+    std::vector<std::vector<std::vector<std::pair<int,int>>>> inflow(
+        width, std::vector<std::vector<std::pair<int,int>>>(height));
+
+    for (int i = 0; i < width; ++i) {
+        for (int j = 0; j < height; ++j) {
+            double z = dem[i][j];
+            std::vector<std::pair<int,int>> downs;
+
+            // find all downslope neighbors
+            for (auto [di, dj] : dirs) {
+                int ni = i + di, nj = j + dj;
+                if (ni < 0 || ni >= width || nj < 0 || nj >= height) continue;
+
+                double dz = z - dem[ni][nj];
+                if (dz > 0) downs.push_back({ni,nj});
+            }
+
+            // link inflows
+            for (auto& d : downs) {
+                inflow[d.first][d.second].push_back({i,j});
+            }
+        }
+    }
+    return inflow;
+}
+
+GeoTiffHandler GeoTiffHandler::watershedMFD(int itarget, int jtarget, FlowDirType type) const {
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+    auto idx = [&](int i, int j){ return j * width_ + i; };
+
+    std::vector<bool> visited(width_ * height_, false);
+    std::queue<std::pair<int,int>> q;
+
+    q.push({itarget,jtarget});
+    visited[idx(itarget,jtarget)] = true;
+
+    while (!q.empty()) {
+        auto [ci, cj] = q.front(); q.pop();
+
+        // Explore *all* neighbors — but only accept those that drain to target
+        for (auto [di,dj] : dirs) {
+            int ni = ci + di, nj = cj + dj;
+            if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
+
+            if (!visited[idx(ni,nj)]) {
+                if (drainsToMFD(ni, nj, itarget, jtarget, type)) {
+                    visited[idx(ni,nj)] = true;
+                    q.push({ni,nj});
+                }
+            }
+        }
+    }
+
+    // Build masked output (same extent as DEM)
+    GeoTiffHandler out(*this);
+    out.data_2d_.assign(width_, std::vector<double>(height_, std::nan("")));
+    out.data_.assign(width_ * height_, std::nanf(""));
+
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            if (visited[idx(i,j)]) {
+                out.data_2d_[i][j] = data_2d_[i][j];
+                out.data_[j * width_ + i] = static_cast<float>(data_2d_[i][j]);
+            }
+        }
+    }
+    return out;
+}
+
+bool GeoTiffHandler::drainsToMFD(int i0, int j0, int itarget, int jtarget, FlowDirType type) const {
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+    std::set<std::pair<int,int>> visited; // avoid infinite loops
+
+    std::function<bool(int,int)> dfs = [&](int ci, int cj) -> bool {
+        // If we've reached the target, success
+        if (ci == itarget && cj == jtarget) return true;
+
+        // Prevent cycles
+        if (visited.count({ci,cj})) return false;
+        visited.insert({ci,cj});
+
+        double z = data_2d_[ci][cj];
+        bool drains = false;
+
+        // Explore all downslope neighbors
+        for (auto [di,dj] : dirs) {
+            int ni = ci + di;
+            int nj = cj + dj;
+            if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
+
+            double dz = z - data_2d_[ni][nj];
+            if (dz > 0) { // only flow downhill
+                if (dfs(ni, nj)) {
+                    drains = true;
+                    break; // one valid path is enough
+                }
+            }
+        }
+        return drains;
+    };
+
+    return dfs(i0, j0);
+}
+
+Path GeoTiffHandler::downstreamPath(int i0, int j0, FlowDirType type) const {
+    if (i0 < 0 || i0 >= width_ || j0 < 0 || j0 >= height_) {
+        throw std::out_of_range("Start indices out of range.");
+    }
+
+    Path path;
+    int ci = i0;
+    int cj = j0;
+
+    // add starting point (cell center coords)
+    path.addPoint(x_[ci], y_[cj]);
+
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
+    while (true) {
+        double z = data_2d_[ci][cj];
+        int bestI = -1, bestJ = -1;
+        double maxDrop = 0.0;
+
+        // search neighbors for steepest gradient
+        for (auto [di, dj] : dirs) {
+            int ni = ci + di;
+            int nj = cj + dj;
+            if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
+
+            double dz = z - data_2d_[ni][nj];
+            if (dz > maxDrop) {
+                maxDrop = dz;
+                bestI = ni;
+                bestJ = nj;
+            }
+        }
+
+        if (bestI == -1 || maxDrop <= 0.0) {
+            // pit, flat, or edge
+            break;
+        }
+
+        ci = bestI;
+        cj = bestJ;
+        path.addPoint(x_[ci], y_[cj]);
+    }
+
+    return path;
+}
+

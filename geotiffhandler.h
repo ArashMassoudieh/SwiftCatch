@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <gdal_priv.h>
+#include <QString>
+#include <QFileDialog>
+#include <QWidget>
 
 /**
  * @class GeoTiffHandler
@@ -13,6 +16,8 @@
  * pixel values, spatial coordinates, and metadata. Data are stored in both
  * a flat 1D vector and a 2D grid for convenience.
  */
+
+class Path;
 
 enum class FlowDirType { D4, D8 };
 
@@ -24,7 +29,8 @@ public:
      * @throw std::runtime_error if the file cannot be opened or read.
      */
     explicit GeoTiffHandler(const std::string& filename);
-
+    GeoTiffHandler(int width, int height);
+    GeoTiffHandler();
     // Custom copy constructor and assignment
     GeoTiffHandler(const GeoTiffHandler& other);
     GeoTiffHandler& operator=(const GeoTiffHandler& other);
@@ -298,6 +304,18 @@ public:
      */
     GeoTiffHandler watershed(int itarget, int jtarget, FlowDirType type = FlowDirType::D4) const;
 
+    GeoTiffHandler watershedMFD(int itarget, int jtarget, FlowDirType type = FlowDirType::D4) const;
+    GeoTiffHandler cropMasked(double nodataThreshold) const;
+
+    static std::vector<std::vector<std::vector<std::pair<int,int>>>> buildInflowMFD(
+        const std::vector<std::vector<double>>& dem,
+        int width, int height,
+        FlowDirType type);
+
+    bool drainsToMFD(int i0, int j0, int itarget, int jtarget, FlowDirType type) const;
+
+
+    Path downstreamPath(int i0, int j0, FlowDirType type) const;
     /**
      * @brief Compute the watershed for a target cell. If its size exceeds minSize,
      *        return it immediately. Otherwise, evaluate all D8 neighbors and return
@@ -337,10 +355,10 @@ public:
     std::pair<int,int> minCellIndex() const;
     ///@}
 
-private:
-    // Special constructor for in-memory rasters
-    GeoTiffHandler(int width, int height);
+    QString info(const QString& fileName) const;
 
+
+private:
     std::string filename_;   ///< Path to the GeoTIFF file.
     GDALDataset* dataset_;   ///< GDAL dataset handle.
     int width_;              ///< Raster width in pixels.
