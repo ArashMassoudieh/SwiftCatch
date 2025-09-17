@@ -7,6 +7,7 @@
 #include <QString>
 #include <QFileDialog>
 #include <QWidget>
+#include "node.h"
 
 /**
  * @class GeoTiffHandler
@@ -385,6 +386,74 @@ public:
      * @return Number of valid cells.
      */
     int countValidCells() const;
+
+    /**
+     * @brief Compute flow accumulation using Multiple Flow Direction (MFD).
+     *
+     * Flow is proportionally distributed to all downslope neighbors.
+     * Each cell contributes 1 (itself) plus inflow from upslope neighbors.
+     *
+     * @param type Neighborhood type: FlowDirType::D4 or FlowDirType::D8.
+     * @param exponent Exponent on slope weighting (default 1.1, common in literature).
+     * @return A new GeoTiffHandler with flow accumulation values.
+     */
+    GeoTiffHandler flowAccumulationMFD(FlowDirType type = FlowDirType::D8, double exponent = 1.1) const;
+
+    enum class FilterMode { Greater, Smaller };
+
+    /**
+     * @brief Filter cells by a threshold.
+     *        - Greater: keeps values > threshold
+     *        - Smaller: keeps values < threshold
+     *        Other cells set to NaN.
+     *
+     * @param threshold Threshold value.
+     * @param mode Filter mode (Greater or Smaller).
+     * @return A new GeoTiffHandler object with filtered values.
+     */
+    GeoTiffHandler filterByThreshold(double threshold, FilterMode mode) const;
+
+     /**
+     * @brief Compute the total area of valid cells.
+     * @return Area = countValidCells() * dx_ * |dy_|
+     */
+    double area() const;
+
+    /**
+     * @brief Resample the raster by averaging values of all source pixels
+     *        that fall inside each target pixel footprint.
+     *
+     * This is useful for downsampling: each new cell value is the average
+     * of the original cells it covers (ignoring NaN).
+     *
+     * @param newNx Number of cells in x-direction (target width).
+     * @param newNy Number of cells in y-direction (target height).
+     * @return A new GeoTiffHandler object with aggregated values.
+     */
+    GeoTiffHandler resampleAverage(int newNx, int newNy) const;
+
+    /**
+     * @brief Extract the center coordinates of all pixels in the grid.
+     * @return Vector of (x,y) pairs representing pixel centers.
+     */
+    std::vector<std::pair<double,double>> cellCenters() const;
+
+        // ...
+
+        /**
+     * @brief Extract nodes (x,y,value) from raster.
+     *
+     * If an optional valueRaster is provided, values are taken from it.
+     * Otherwise, values come from this raster.
+     *
+     * @param valueRaster Optional pointer to another GeoTiffHandler with same size.
+     * @return Vector of Node objects.
+     * @throw std::runtime_error if valueRaster dimensions are inconsistent.
+     */
+    std::vector<Node> nodes(const GeoTiffHandler* valueRaster = nullptr) const;
+
+
+
 
 private:
     std::string filename_;   ///< Path to the GeoTIFF file.

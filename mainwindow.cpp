@@ -9,6 +9,8 @@
 #include "geotiffhandler.h"
 #include <QMessageBox>
 #include "path.h"
+#include "streamnetwork.h"
+#include "modelcreator.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -75,7 +77,7 @@ void MainWindow::on_Load_GeoTIFF()
     GeoTiffHandler dem(fileName.toStdString());
 
     //resampling
-    GeoTiffHandler dem_resampled = dem.resample(100,100);
+    GeoTiffHandler dem_resampled = dem.resampleAverage(30,30);
 
     dem_resampled.saveAs(folderPath.toStdString() + "dem_resampled.tif");
 
@@ -91,7 +93,8 @@ void MainWindow::on_Load_GeoTIFF()
     sinks_filled.saveAs(folderPath.toStdString() + "sinksfilled.tiff");
 
     //pair<int,int> highestpoint = dem_resampled.maxCellIndex();
-    pair<int,int> highestpoint = sinks_filled.indicesAt(-77.008238, 39.003033);
+
+    pair<int,int> highestpoint = sinks_filled.indicesAt(325684, 4320369);
     Path path = sinks_filled.downstreamPath(highestpoint.first, highestpoint.second,FlowDirType::D8);
 
     path.saveAsGeoJSON(folderPath +  "path.geojson");
@@ -102,9 +105,11 @@ void MainWindow::on_Load_GeoTIFF()
     // Compute watershed
 
 
-    pair<int,int> pourpoint = sinks_filled.indicesAt(-76.986683, 38.976667);
+    pair<int,int> pourpoint = sinks_filled.indicesAt(327666.6,4316298.0 );
 
     GeoTiffHandler ws = sinks_filled.watershedMFD(pourpoint.first, pourpoint.second, FlowDirType::D8);
+
+
 
     // Save masked watershed
     ws.saveAsAscii(folderPath.toStdString() + "watershed_masked.asc", -9999.0);
@@ -112,9 +117,26 @@ void MainWindow::on_Load_GeoTIFF()
 
     // Crop watershed
     GeoTiffHandler wsCrop = ws.cropMasked(-9999);
-    wsCrop.saveAsAscii(folderPath.toStdString() + "watershed_cropped_9.asc", -9999.0);
+    wsCrop.saveAsAscii(folderPath.toStdString() + "watershed_cropped.asc", -9999.0);
     wsCrop.saveAs(folderPath.toStdString() + "watershed_cropped.tif");
 
+    QMessageBox::information(this, "GeoTIFF Information", wsCrop.info("watershed_cropped.tif"));
+
+    // Flow Accumulation
+    GeoTiffHandler flowaccumulation = wsCrop.flowAccumulationMFD(FlowDirType::D8);
+    flowaccumulation.saveAs(folderPath.toStdString() + "flow_accumulation.tif");
+
+    GeoTiffHandler flowline = flowaccumulation.filterByThreshold(flowaccumulation.area()*0.05, GeoTiffHandler::FilterMode::Greater);
+    flowline.saveAs(folderPath.toStdString() + "flow_line.tif");
+
+    std::vector<Node> nodes = flowline.nodes(&wsCrop);
+
+    StreamNetwork network = StreamNetwork::buildDirected(nodes);
+
+    network.saveEdgesAsGeoJSON(folderPath + "network.geojson");
+
+    ModelCreator modelcreator(wsCrop,network);
+    modelcreator.saveModel(folderPath + "Model/model.json");
 }
 
 void MainWindow::on_Uniformized()

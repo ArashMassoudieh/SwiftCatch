@@ -24,8 +24,11 @@ SOURCES += \
     hydrodownloaderdlg.cpp \
     main.cpp \
     mainwindow.cpp \
+    modelcreator.cpp \
+    node.cpp \
     path.cpp \
     polylinegeodataset.cpp \
+    streamnetwork.cpp \
     weatherdata.cpp \
     weatherdownloaderdlg.cpp
 
@@ -47,8 +50,11 @@ HEADERS += \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
     mainwindow.h \
+    modelcreator.h \
+    node.h \
     path.h \
     polylinegeodataset.h \
+    streamnetwork.h \
     weatherdata.h \
     weatherdownloaderdlg.h
 

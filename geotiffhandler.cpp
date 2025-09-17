@@ -720,7 +720,10 @@ QString GeoTiffHandler::info(const QString& fileName) const {
                           "  Xmin: %9\n"
                           "  Xmax: %10\n"
                           "  Ymin: %11\n"
-                          "  Ymax: %12\n")
+                          "  Ymax: %12\n"
+                          "  Number of cells: %13\n"
+                          "  Area: %14\n"
+                          )
                           .arg(fileName.isEmpty() ? "(in-memory)" : fileName)
                           .arg(width_)
                           .arg(height_)
@@ -732,7 +735,9 @@ QString GeoTiffHandler::info(const QString& fileName) const {
                           .arg(xmin)
                           .arg(xmax)
                           .arg(ymin)
-                          .arg(ymax);
+                          .arg(ymax)
+                          .arg(countValidCells())
+                          .arg(area());
 
     // --- Add geotransform details if dataset_ exists ---
     if (dataset_) {
@@ -1016,3 +1021,235 @@ int GeoTiffHandler::countValidCells() const {
     }
     return count;
 }
+
+GeoTiffHandler GeoTiffHandler::flowAccumulationMFD(FlowDirType type, double exponent) const {
+    const auto& dirs = (type == FlowDirType::D4) ? dirsD4 : dirsD8;
+
+    // -------------------------------------------------
+    // Step 0: Prepare output raster and initialize with 1
+    // -------------------------------------------------
+    GeoTiffHandler out(*this);
+    out.data_2d_.assign(width_, std::vector<double>(height_, fabs(dx_)*fabs(dy_)));
+    out.data_.assign(width_ * height_, fabs(dx_)*fabs(dy_));
+
+    // -------------------------------------------------
+    // Step 1: Sort cells by elevation (descending order)
+    // -------------------------------------------------
+    std::vector<std::tuple<double,int,int>> cells;
+    cells.reserve(width_ * height_);
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            if (!std::isnan(data_2d_[i][j])) {
+                cells.emplace_back(-data_2d_[i][j], i, j); // negative so sort gives descending
+            }
+        }
+    }
+    std::sort(cells.begin(), cells.end());
+
+    // -------------------------------------------------
+    // Step 2: Process cells from highest to lowest
+    // -------------------------------------------------
+    for (auto [negz, i, j] : cells) {
+        double z = data_2d_[i][j];
+        double contrib = out.data_2d_[i][j];
+
+        // -------------------------------------------------
+        // Step 2a: Find all downslope neighbors and compute weights
+        // -------------------------------------------------
+        std::vector<std::pair<int,int>> downs;
+        std::vector<double> weights;
+        double sumw = 0.0;
+
+        for (auto [di, dj] : dirs) {
+            int ni = i + di, nj = j + dj;
+            if (ni < 0 || ni >= width_ || nj < 0 || nj >= height_) continue;
+
+            double dz = z - data_2d_[ni][nj];
+            if (dz > 0) { // downslope
+                double dist = (di == 0 || dj == 0) ? 1.0 : std::sqrt(2.0);
+                double w = std::pow(dz / dist, exponent);
+                downs.push_back({ni,nj});
+                weights.push_back(w);
+                sumw += w;
+            }
+        }
+
+        // -------------------------------------------------
+        // Step 2b: Distribute contribution proportionally
+        // -------------------------------------------------
+        if (sumw > 0.0) {
+            for (size_t k = 0; k < downs.size(); ++k) {
+                int ni = downs[k].first;
+                int nj = downs[k].second;
+                double frac = weights[k] / sumw;
+                out.data_2d_[ni][nj] += contrib * frac;
+            }
+        }
+    }
+
+    // -------------------------------------------------
+    // Step 3: Flatten 2D accumulation grid back to 1D buffer
+    // -------------------------------------------------
+    for (int j = 0; j < height_; ++j) {
+        for (int i = 0; i < width_; ++i) {
+            out.data_[j * width_ + i] = static_cast<float>(out.data_2d_[i][j]);
+        }
+    }
+
+    return out;
+}
+
+GeoTiffHandler GeoTiffHandler::filterByThreshold(double threshold, FilterMode mode) const {
+    GeoTiffHandler out(*this);
+    out.data_2d_.assign(width_, std::vector<double>(height_, std::nan("")));
+    out.data_.assign(width_ * height_, std::nanf(""));
+
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            double v = data_2d_[i][j];
+            if (std::isnan(v)) continue;
+
+            bool keep = false;
+            if (mode == FilterMode::Greater && v > threshold) keep = true;
+            if (mode == FilterMode::Smaller && v < threshold) keep = true;
+
+            if (keep) {
+                out.data_2d_[i][j] = v;
+                out.data_[j * width_ + i] = static_cast<float>(v);
+            }
+        }
+    }
+
+    return out;
+}
+
+double GeoTiffHandler::area() const {
+    // use absolute dy in case dy_ is negative (north-up convention)
+    return static_cast<double>(countValidCells()) * fabs(dx_) * fabs(dy_);
+}
+
+GeoTiffHandler GeoTiffHandler::resampleAverage(int newNx, int newNy) const {
+    if (x_.empty() || y_.empty()) {
+        throw std::runtime_error("Coordinate arrays not initialized.");
+    }
+    if (newNx <= 0 || newNy <= 0) {
+        throw std::invalid_argument("Target grid size must be positive.");
+    }
+
+    // Create output with same metadata
+    GeoTiffHandler out(*this);
+    out.width_  = newNx;
+    out.height_ = newNy;
+
+    // Recompute dx, dy
+    double xmin = x_.front() - 0.5 * dx_;
+    double xmax = x_.back()  + 0.5 * dx_;
+    double ymin = std::min(y_.front(), y_.back()) - 0.5 * std::abs(dy_);
+    double ymax = std::max(y_.front(), y_.back()) + 0.5 * std::abs(dy_);
+
+    out.dx_ = (xmax - xmin) / newNx;
+    out.dy_ = (ymax - ymin) / newNy;
+    if (dy_ < 0) out.dy_ = -out.dy_;  // preserve orientation
+
+    // New coordinate vectors (cell centers)
+    out.x_.resize(newNx);
+    out.y_.resize(newNy);
+    for (int i = 0; i < newNx; ++i) {
+        out.x_[i] = xmin + (i + 0.5) * out.dx_;
+    }
+    for (int j = 0; j < newNy; ++j) {
+        if (dy_ < 0) {
+            out.y_[j] = ymax + (j + 0.5) * out.dy_;
+        } else {
+            out.y_[j] = ymin + (j + 0.5) * out.dy_;
+        }
+    }
+
+    // Allocate output data
+    out.data_2d_.assign(newNx, std::vector<double>(newNy, std::nan("")));
+    out.data_.assign(newNx * newNy, std::nanf(""));
+
+    // Factor: how many source pixels per target pixel (roughly)
+    double scaleX = static_cast<double>(width_) / newNx;
+    double scaleY = static_cast<double>(height_) / newNy;
+
+    // Loop over new grid cells
+    for (int j = 0; j < newNy; ++j) {
+        for (int i = 0; i < newNx; ++i) {
+            // Find source index range that overlaps this target cell
+            int i0 = static_cast<int>(std::floor(i * scaleX));
+            int i1 = static_cast<int>(std::floor((i + 1) * scaleX));
+            int j0 = static_cast<int>(std::floor(j * scaleY));
+            int j1 = static_cast<int>(std::floor((j + 1) * scaleY));
+
+            i1 = std::min(i1, width_  - 1);
+            j1 = std::min(j1, height_ - 1);
+
+            double sum = 0.0;
+            int count = 0;
+
+            for (int ii = i0; ii <= i1; ++ii) {
+                for (int jj = j0; jj <= j1; ++jj) {
+                    double v = data_2d_[ii][jj];
+                    if (!std::isnan(v)) {
+                        sum += v;
+                        count++;
+                    }
+                }
+            }
+
+            if (count > 0) {
+                double avg = sum / count;
+                out.data_2d_[i][j] = avg;
+                out.data_[j * newNx + i] = static_cast<float>(avg);
+            }
+        }
+    }
+
+    return out;
+}
+
+std::vector<std::pair<double,double>> GeoTiffHandler::cellCenters() const {
+    std::vector<std::pair<double,double>> centers;
+    centers.reserve(width_ * height_);
+
+    for (int j = 0; j < height_; ++j) {
+        for (int i = 0; i < width_; ++i) {
+            centers.emplace_back(x_[i], y_[j]);
+        }
+    }
+    return centers;
+}
+
+std::vector<Node> GeoTiffHandler::nodes(const GeoTiffHandler* valueRaster) const {
+    // consistency check if valueRaster provided
+    if (valueRaster) {
+        if (valueRaster->width() != width_ || valueRaster->height() != height_) {
+            throw std::runtime_error("GeoTiffHandler::nodes: raster dimensions do not match.");
+        }
+    }
+
+    std::vector<Node> out;
+    out.reserve(width_ * height_);
+
+    for (int j = 0; j < height_; ++j) {
+        for (int i = 0; i < width_; ++i) {
+            double val;
+            if (valueRaster) {
+                val = valueRaster->data2D()[i][j];
+            } else {
+                val = data_2d_[i][j];
+            }
+
+            if (std::isnan(data_2d_[i][j])) {
+                continue; // skip invalid cell
+            }
+
+            out.emplace_back(x_[i], y_[j], val);
+        }
+    }
+
+    return out;
+}
+
+
