@@ -27,7 +27,9 @@ SOURCES += \
     modelcreator.cpp \
     node.cpp \
     path.cpp \
+    polyline.cpp \
     polylinegeodataset.cpp \
+    polylineset.cpp \
     streamnetwork.cpp \
     weatherdata.cpp \
     weatherdownloaderdlg.cpp
@@ -53,7 +55,9 @@ HEADERS += \
     modelcreator.h \
     node.h \
     path.h \
+    polyline.h \
     polylinegeodataset.h \
+    polylineset.h \
     streamnetwork.h \
     weatherdata.h \
     weatherdownloaderdlg.h
