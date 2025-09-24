@@ -341,3 +341,38 @@ void Polyline::loadFromEnhancedGeoJSON(const QString& filename) {
     }
 }
 
+// GeometryBase interface implementations
+std::pair<Point, Point> Polyline::getBoundingBox() const {
+    if (enhanced_points_.empty()) {
+        return {Point(0.0, 0.0), Point(0.0, 0.0)};
+    }
+
+    double minX = enhanced_points_[0].x;
+    double minY = enhanced_points_[0].y;
+    double maxX = minX;
+    double maxY = minY;
+
+    for (const auto& point : enhanced_points_) {
+        minX = std::min(minX, point.x);
+        minY = std::min(minY, point.y);
+        maxX = std::max(maxX, point.x);
+        maxY = std::max(maxY, point.y);
+    }
+
+    return {Point(minX, minY), Point(maxX, maxY)};
+}
+
+void Polyline::saveAsGeoJSON(const QString& filename, int crsEPSG) const {
+    // Use the existing enhanced GeoJSON method
+    saveAsEnhancedGeoJSON(filename, crsEPSG);
+}
+
+void Polyline::loadFromGeoJSON(const QString& filename) {
+    // Use the existing enhanced GeoJSON method
+    loadFromEnhancedGeoJSON(filename);
+}
+
+std::string Polyline::getGeometryType() const {
+    return "LineString";
+}
+

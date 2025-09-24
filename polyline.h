@@ -6,6 +6,7 @@
 #include <string>
 #include <optional>
 #include <set>
+#include <geometrybase.h>
 
 /// \brief Enhanced Point with named attributes for storing additional data
 struct EnhancedPoint {
@@ -29,7 +30,7 @@ struct EnhancedPoint {
 };
 
 /// \brief Polyline class that extends Path functionality with enhanced points
-class Polyline : public Path {
+class Polyline : public Path, public GeometryBase {
 public:
     // Constructors
     Polyline() = default;
@@ -71,7 +72,7 @@ public:
     std::optional<double> getAverageAttribute(const std::string& name) const;
 
     // Override clear to maintain synchronization
-    void clear();
+    void clear() override;
 
     // Get all unique attribute names across all points
     std::set<std::string> getAllAttributeNames() const;
@@ -82,6 +83,14 @@ public:
     // Export methods
     void saveAsEnhancedGeoJSON(const QString& filename, int crsEPSG = 4326) const;
     void loadFromEnhancedGeoJSON(const QString& filename);
+
+    size_t size() const override { return Path::size(); }
+    bool empty() const override { return Path::size() == 0; }
+    std::pair<Point, Point> getBoundingBox() const override;
+    size_t getTotalPointCount() const override { return size(); }
+    void saveAsGeoJSON(const QString& filename, int crsEPSG = 4326) const override;
+    void loadFromGeoJSON(const QString& filename) override;
+    std::string getGeometryType() const override;
 
 private:
     std::vector<EnhancedPoint> enhanced_points_;

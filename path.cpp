@@ -85,7 +85,6 @@ void Path::saveAsGeoJSON(const QString& filename, int crsEPSG) const {
     file.write(doc.toJson(QJsonDocument::Indented));
 }
 
-/// Load from GeoJSON (replaces current contents)
 void Path::loadFromGeoJSON(const QString& filename) {
     QFile file(filename);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {

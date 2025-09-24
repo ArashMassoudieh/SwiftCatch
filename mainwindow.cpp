@@ -11,6 +11,9 @@
 #include "path.h"
 #include "streamnetwork.h"
 #include "modelcreator.h"
+#include "polylineset.h"
+#include "geometrymapdialog.h"
+#include <memory>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -24,6 +27,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionRead_Weather_Data, SIGNAL(triggered()),this,SLOT(on_ReadWeatherData()));
     connect(ui->actionSelect_Area, SIGNAL(triggered()), this, SLOT(on_Select_Area()));
     connect(ui->actionLoad_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Load_GeoTIFF()));
+    connect(ui->actionLoad_Transportation_Layer, &QAction::triggered, this, &MainWindow::on_Load_Transportation_Layer);
 
 }
 
@@ -65,6 +69,54 @@ void MainWindow::on_Download_GeoTIFF()
 
     GDALClose(demDataset);
 
+}
+
+// Replace your debug info code in the Transportation Layer loading function:
+void MainWindow::on_Load_Transportation_Layer() {
+    QString fileName = getFileNameWithExtension(this,"Shape files","","Shapefiles (*.shp);;All Files (*)",DialogMode::Open,"shp");
+    if (fileName.isEmpty()) return;
+
+    try {
+        auto roads = std::make_shared<PolylineSet>();
+        roads->loadFromShapefile(fileName);
+
+        // Show detailed debug info - FIXED VERSION
+        QString debugInfo = QString("Loaded: %1 polylines\nTotal points: %2")
+                                .arg(roads->size())
+                                .arg(roads->getTotalPointCount());
+
+        if (roads->empty()) {
+            QMessageBox::information(this, "Debug Info",
+                                     "No polylines loaded. The shapefile might contain:\n"
+                                     "- Point geometry (not supported by PolylineSet)\n"
+                                     "- Polygon geometry (not supported by PolylineSet)\n"
+                                     "- Empty features\n\n" + debugInfo);
+            return;
+        }
+
+        auto bbox = roads->getBoundingBox();
+
+        // CORRECT way to format the bounding box with 4 arguments
+        debugInfo += QString("\nBounding box: (%1, %2) to (%3, %4)")
+                         .arg(bbox.first.x)
+                         .arg(bbox.first.y)
+                         .arg(bbox.second.x)
+                         .arg(bbox.second.y);
+
+        QMessageBox::information(this, "Debug Info", debugInfo);
+
+        // Create viewer
+        GeometryMapDialog* mapDialog = new GeometryMapDialog(this);
+        QString layerName = QFileInfo(fileName).baseName();
+        QFileInfo info(fileName);
+        QString folderPath = info.absolutePath() + "/";
+        roads->saveAsEnhancedGeoJSON(folderPath + "roads.geojson");
+        mapDialog->addGeometryLayer(layerName, roads, Qt::red, 3, 0);
+        mapDialog->show();
+
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "Error", QString("Failed to load: %1").arg(e.what()));
+    }
 }
 
 void MainWindow::on_Load_GeoTIFF()

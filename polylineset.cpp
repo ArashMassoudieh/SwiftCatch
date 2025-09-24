@@ -1364,3 +1364,6 @@ std::vector<size_t> PolylineSet::sortIndicesByNumeric(const std::string& name, b
     return indices;
 }
 
+std::string PolylineSet::getGeometryType() const {
+    return "MultiLineString";
+}

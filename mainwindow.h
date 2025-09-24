@@ -34,6 +34,7 @@ public slots:
     void on_Uniformized();
     void on_ReadWeatherData();
     void on_Select_Area();
+    void on_Load_Transportation_Layer();
 };
 
 enum class DialogMode { Open, Save };

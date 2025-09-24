@@ -19,6 +19,10 @@ SOURCES += \
     Utilities/QuickSort.cpp \
     Utilities/Utilities.cpp \
     geodatadownloader.cpp \
+    geomertymapviewer.cpp \
+    geometrybase.cpp \
+    geometrymapdialog.cpp \
+    geometryviewerwidget.cpp \
     geotiffhandler.cpp \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \
@@ -48,6 +52,10 @@ HEADERS += \
     Utilities/QuickSort.h \
     Utilities/Utilities.h \
     geodatadownloader.h \
+    geomertymapviewer.h \
+    geometrybase.h \
+    geometrymapdialog.h \
+    geometryviewerwidget.h \
     geotiffhandler.h \
     hydrodownloader.h \
     hydrodownloaderdlg.h \

@@ -8,6 +8,8 @@
 #include <optional>
 #include <set>
 #include <functional>
+#include <geometrybase.h>
+#include <GeoDataSetInterface.h>
 
 // Forward declarations for GDAL
 class GDALDataset;
@@ -15,7 +17,7 @@ class OGRLayer;
 class OGRFeature;
 
 /// \brief Container class for managing multiple polylines with per-polyline attributes
-class PolylineSet {
+class PolylineSet: public GeometryBase {
 public:
     // Constructors
     PolylineSet() = default;
@@ -32,15 +34,17 @@ public:
     void addPolyline(const Polyline& polyline);
     void addPolyline(Polyline&& polyline);
     void removePolyline(size_t index);
-    void clear();
+    void clear() override;
+
+    std::string getGeometryType() const override;
 
     // Accessors
     const Polyline& getPolyline(size_t index) const;
     Polyline& getPolyline(size_t index);
     const Polyline& operator[](size_t index) const;
     Polyline& operator[](size_t index);
-    size_t size() const;
-    bool empty() const;
+    size_t size() const override;
+    bool empty() const override;
 
     // Iterator support
     std::vector<Polyline>::iterator begin();
@@ -90,13 +94,13 @@ public:
     std::set<std::string> getAllAttributeNames() const;
 
     // Statistics about polylines themselves
-    size_t getTotalPointCount() const;
+    size_t getTotalPointCount() const override;
     std::optional<size_t> getMinPolylineSize() const;
     std::optional<size_t> getMaxPolylineSize() const;
     double getAveragePolylineSize() const;
 
     // Spatial operations
-    std::pair<Point, Point> getBoundingBox() const;
+    std::pair<Point, Point> getBoundingBox() const override;
     std::vector<size_t> findPolylinesIntersectingBounds(const Point& minPoint, const Point& maxPoint) const;
 
     // Filtering operations
@@ -112,8 +116,8 @@ public:
     void sortByCustom(std::function<bool(const std::pair<Polyline*, size_t>&, const std::pair<Polyline*, size_t>&)> comparator);
 
     // File I/O operations
-    void saveAsGeoJSON(const QString& filename, int crsEPSG = 4326) const;
-    void loadFromGeoJSON(const QString& filename);
+    void saveAsGeoJSON(const QString& filename, int crsEPSG = 4326) const override;
+    void loadFromGeoJSON(const QString& filename) override;
     void saveAsEnhancedGeoJSON(const QString& filename, int crsEPSG = 4326) const;
     void loadFromEnhancedGeoJSON(const QString& filename);
 
