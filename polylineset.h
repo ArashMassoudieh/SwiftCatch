@@ -15,6 +15,7 @@
 class GDALDataset;
 class OGRLayer;
 class OGRFeature;
+class GeoTiffHandler;
 
 /// \brief Container class for managing multiple polylines with per-polyline attributes
 class PolylineSet: public GeometryBase {
@@ -130,6 +131,16 @@ public:
     void exportStringAttributesToCSV(const QString& filename, const std::vector<std::string>& attributeNames = {}) const;
     void exportSummaryStatistics(const QString& filename) const;
 
+        /**
+     * @brief Calculate slope projected along the line from first to last point for each polyline.
+     * The slope is calculated at the centroid of each polyline using the provided DEM.
+     * Results are stored as numeric attributes "projected_slope" in the polyline set.
+     * @param demPtr Pointer to GeoTiffHandler containing elevation data.
+     * @param attributeName Name for the slope attribute (default "projected_slope").
+     * @throw std::runtime_error if demPtr is null or polylines have insufficient points.
+     */
+    void calculateProjectedSlopes(const GeoTiffHandler* demPtr, const std::string& attributeName = "projected_slope");
+
 private:
     std::vector<Polyline> polylines_;
     std::vector<std::map<std::string, double>> numeric_attributes_;  // Per-polyline numeric attributes
@@ -146,6 +157,9 @@ private:
     void processOGRFeature(OGRFeature* feature, size_t polylineIndex);
     void processLineString(class OGRLineString* lineString);
     std::string ogrFieldTypeToString(int fieldType) const;
+
+    double minDistanceToPoint(const Point& point) const;
+    size_t findNearestPolyline(const Point& point) const;
 };
 
 #endif // POLYLINESET_H

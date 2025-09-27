@@ -28,6 +28,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionSelect_Area, SIGNAL(triggered()), this, SLOT(on_Select_Area()));
     connect(ui->actionLoad_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Load_GeoTIFF()));
     connect(ui->actionLoad_Transportation_Layer, &QAction::triggered, this, &MainWindow::on_Load_Transportation_Layer);
+    connect(ui->actionGet_Closest_Sewer_Pipe, &QAction::triggered, this, &MainWindow::on_Find_Closest_Sewers);
 
 }
 
@@ -118,6 +119,97 @@ void MainWindow::on_Load_Transportation_Layer() {
         QMessageBox::critical(this, "Error", QString("Failed to load: %1").arg(e.what()));
     }
 }
+
+void MainWindow::on_Find_Closest_Sewers()
+{
+    try {
+        // Step 1: Get input DEM/raster file
+        QString demFileName = getFileNameWithExtension(
+            this,
+            "Select Input Raster (DEM)",
+            "",
+            "GeoTIFF Files (*.tif *.tiff);;All Files (*)",
+            DialogMode::Open,
+            "tif"
+            );
+
+        if (demFileName.isEmpty()) {
+            return; // User cancelled
+        }
+
+        // Step 2: Get polyline shapefile
+        QString shapeFileName = getFileNameWithExtension(
+            this,
+            "Select Polyline Shapefile",
+            "",
+            "Shapefiles (*.shp);;All Files (*)",
+            DialogMode::Open,
+            "shp"
+            );
+
+        if (shapeFileName.isEmpty()) {
+            return; // User cancelled
+        }
+
+        // Step 3: Get output file location
+        QString outputFileName = getFileNameWithExtension(
+            this,
+            "Save Closest Polyline Raster As",
+            "",
+            "GeoTIFF Files (*.tif *.tiff);;All Files (*)",
+            DialogMode::Save,
+            "tif"
+            );
+
+        if (outputFileName.isEmpty()) {
+            return; // User cancelled
+        }
+
+        // Step 4: Load the input raster
+        GeoTiffHandler inputRaster(demFileName.toStdString());
+
+        // Step 5: Load the polylines
+        PolylineSet polylines;
+        polylines.loadFromShapefile(shapeFileName);
+
+        // Step 6: Create closest polyline raster
+        GeoTiffHandler closestPolylineRaster = inputRaster.closestPolylineRaster(polylines, -1.0);
+
+        // Step 7: Save the result
+        closestPolylineRaster.saveAs(outputFileName.toStdString());
+
+        qDebug() << closestPolylineRaster.info(outputFileName);
+
+                // Optional: Show completion message
+        QMessageBox::information(this, "Success",
+                                 QString("Closest polyline raster saved to:\n%1\n\n"
+                                         "Raster contains polyline indices (0-%2) where:\n"
+                                         "- Each pixel value represents the index of the closest polyline\n"
+                                         "- Value -1 indicates no data/invalid pixels")
+                                     .arg(outputFileName)
+                                     .arg(polylines.size() - 1));
+
+
+        GeoTiffHandler::diagnoseGeoTiff(outputFileName.toStdString());
+
+        QFileInfo info(outputFileName);
+        QString folderPath = info.absolutePath() + "/";
+
+        polylines.calculateProjectedSlopes(&inputRaster);
+
+        polylines.saveAsShapefile(folderPath + "Roads_with_projected_slopes.shp");
+
+        polylines.exportNumericAttributesToCSV(folderPath + "Roads_with_projected_slopes.csv");
+
+        return ;
+
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "Error",
+                              QString("Failed to create closest polyline raster:\n%1").arg(e.what()));
+        return ;
+    }
+}
+
 
 void MainWindow::on_Load_GeoTIFF()
 {

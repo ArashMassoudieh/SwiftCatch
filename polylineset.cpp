@@ -21,6 +21,7 @@
 #include <cpl_conv.h>  // for CPLMalloc()
 #include <cpl_string.h>
 #include <gdal_version.h>
+#include "geotiffhandler.h"
 
 // Simple GDAL initialization
 static void initializeGDAL() {
@@ -582,15 +583,24 @@ void PolylineSet::saveAsShapefile(const QString& filename, int crsEPSG) const {
         auto numericAttrNames = getAllNumericAttributeNames();
         auto stringAttrNames = getAllStringAttributeNames();
 
-        // Create numeric attribute fields
+        std::map<std::string, std::string> fieldNameMapping; // original -> actual
+
         for (const auto& attrName : numericAttrNames) {
-            OGRFieldDefn numericField(attrName.c_str(), OFTReal);
+            // Truncate field name for shapefile (10 char limit)
+            std::string truncatedName = attrName.substr(0, 10);
+
+            std::cout << "Creating field: " << attrName << " -> " << truncatedName << std::endl;
+
+            OGRFieldDefn numericField(truncatedName.c_str(), OFTReal);
             numericField.SetWidth(15);
             numericField.SetPrecision(6);
 
             if (layer->CreateField(&numericField) != OGRERR_NONE) {
-                throw std::runtime_error("Failed to create numeric field: " + attrName);
+                throw std::runtime_error("Failed to create numeric field: " + truncatedName);
             }
+
+            // Store the mapping
+            fieldNameMapping[attrName] = truncatedName;
         }
 
         // Create string attribute fields
@@ -622,12 +632,20 @@ void PolylineSet::saveAsShapefile(const QString& filename, int crsEPSG) const {
             if (i < numeric_attributes_.size()) {
                 const auto& numAttrs = numeric_attributes_[i];
                 for (const auto& pair : numAttrs) {
-                    int fieldIndex = feature->GetFieldIndex(pair.first.c_str());
+                    // Truncate attribute name to match what was created
+                    std::string fieldName = pair.first.substr(0, 10);
+
+                    int fieldIndex = feature->GetFieldIndex(fieldName.c_str());
                     if (fieldIndex >= 0) {
-                        feature->SetField(fieldIndex, pair.second);
+                        if (std::isnan(pair.second)) {
+                            feature->SetFieldNull(fieldIndex);
+                        } else {
+                            feature->SetField(fieldIndex, pair.second);
+                        }
                     }
                 }
             }
+
 
             // Set string attributes
             if (i < string_attributes_.size()) {
@@ -1364,6 +1382,107 @@ std::vector<size_t> PolylineSet::sortIndicesByNumeric(const std::string& name, b
     return indices;
 }
 
+double PolylineSet::minDistanceToPoint(const Point& point) const {
+    if (polylines_.empty()) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    double minDistance = std::numeric_limits<double>::infinity();
+
+    for (const auto& polyline : polylines_) {
+        double distance = polyline.distanceToPoint(point);
+        minDistance = std::min(minDistance, distance);
+    }
+
+    return minDistance;
+}
+
 std::string PolylineSet::getGeometryType() const {
     return "MultiLineString";
+}
+
+
+size_t PolylineSet::findNearestPolyline(const Point& point) const {
+    if (polylines_.empty()) {
+        throw std::runtime_error("No polylines in set");
+    }
+
+    double minDistance = std::numeric_limits<double>::infinity();
+    size_t nearestIndex = 0;
+
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        double distance = polylines_[i].distanceToPoint(point);
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestIndex = i;
+        }
+    }
+
+    return nearestIndex;
+}
+
+void PolylineSet::calculateProjectedSlopes(const GeoTiffHandler* demPtr, const std::string& attributeName) {
+    if (!demPtr) {
+        throw std::runtime_error("GeoTiffHandler pointer is null");
+    }
+
+    if (polylines_.empty()) {
+        return;
+    }
+
+    ensureAttributeVectorSize(polylines_.size());
+
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        const auto& polyline = polylines_[i];
+
+        // Skip polylines with insufficient points
+        if (polyline.size() < 2) {
+            numeric_attributes_[i][attributeName] = std::nan("");
+            continue;
+        }
+
+        // Get centroid of the polyline
+        Point centroid;
+        try {
+            centroid = polyline.getCentroid();
+        } catch (const std::exception& e) {
+            numeric_attributes_[i][attributeName] = std::nan("");
+            continue;
+        }
+
+        // Get first and last points to define the projection direction
+        const auto& firstPoint = polyline.getEnhancedPoints().front();
+        const auto& lastPoint = polyline.getEnhancedPoints().back();
+
+        // Calculate direction vector from first to last point
+        double dx_line = lastPoint.x - firstPoint.x;
+        double dy_line = lastPoint.y - firstPoint.y;
+        double line_length = std::sqrt(dx_line * dx_line + dy_line * dy_line);
+
+        if (line_length == 0.0) {
+            // First and last points are the same
+            numeric_attributes_[i][attributeName] = 0.0;
+            continue;
+        }
+
+        // Normalize direction vector
+        double unit_x = dx_line / line_length;
+        double unit_y = dy_line / line_length;
+
+        // Get slope components at the centroid from DEM
+        // This now returns NaN gracefully instead of throwing
+        auto [slope_x, slope_y] = demPtr->slopeAtBilinear(centroid.x, centroid.y);
+
+        // Check if slope calculation returned valid values
+        if (std::isnan(slope_x) || std::isnan(slope_y)) {
+            numeric_attributes_[i][attributeName] = std::nan("");
+            continue;
+        }
+
+        // Project slope onto the line direction using dot product
+        double projected_slope = slope_x * unit_x + slope_y * unit_y;
+
+        // Store the result
+        numeric_attributes_[i][attributeName] = projected_slope;
+    }
 }

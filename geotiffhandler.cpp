@@ -13,6 +13,7 @@
 #include <cmath>
 #include "path.h"
 
+
 static const int di[4] = {  1, -1,  0,  0 };
 static const int dj[4] = {  0,  0,  1, -1 };
 
@@ -97,7 +98,8 @@ GeoTiffHandler::GeoTiffHandler(const GeoTiffHandler& other)
     width_(other.width_), height_(other.height_), bands_(other.bands_),
     data_(other.data_), data_2d_(other.data_2d_),
     x_(other.x_), y_(other.y_),
-    dx_(other.dx_), dy_(other.dy_)
+    dx_(other.dx_), dy_(other.dy_),
+    variables_(other.variables_)
 {
     // dataset_ deliberately left null (we do not duplicate GDAL handles)
 }
@@ -116,6 +118,7 @@ GeoTiffHandler& GeoTiffHandler::operator=(const GeoTiffHandler& other) {
         y_       = other.y_;
         dx_      = other.dx_;
         dy_      = other.dy_;
+        variables_ = other.variables_;
     }
     return *this;
 }
@@ -176,24 +179,21 @@ double GeoTiffHandler::dy() const { return dy_; }
 void GeoTiffHandler::setDy(double dy) { dy_ = dy; }
 
 
-#include <cmath>
-#include <stdexcept>
-
 double GeoTiffHandler::valueAt(double xCoord, double yCoord) const {
-    if (x_.empty() || y_.empty())
-        throw std::runtime_error("Coordinate arrays not initialized.");
+    if (x_.empty() || y_.empty()) {
+        return std::nan("");
+    }
 
-    // Convert world coords to fractional indices
     double col = (xCoord - (x_.front())) / dx_;
     double row = (yCoord - (y_.front())) / dy_;
 
-    // Account for negative dy (north-up rasters)
     if (dy_ < 0) {
-        row = (yCoord - y_.front()) / dy_; // dy negative, works out
+        row = (yCoord - y_.front()) / dy_;
     }
 
+    // Return NaN if outside bounds
     if (col < 0 || col >= width_-1 || row < 0 || row >= height_-1) {
-        throw std::out_of_range("Coordinate outside raster extent.");
+        return std::nan("");
     }
 
     int i = static_cast<int>(std::floor(col));
@@ -206,6 +206,11 @@ double GeoTiffHandler::valueAt(double xCoord, double yCoord) const {
     double q21 = data_2d_[i+1][j];
     double q12 = data_2d_[i][j+1];
     double q22 = data_2d_[i+1][j+1];
+
+    // Return NaN if any corner is NaN
+    if (std::isnan(q11) || std::isnan(q21) || std::isnan(q12) || std::isnan(q22)) {
+        return std::nan("");
+    }
 
     // Bilinear interpolation
     double val =
@@ -1252,4 +1257,291 @@ std::vector<Node> GeoTiffHandler::nodes(const GeoTiffHandler* valueRaster) const
     return out;
 }
 
+// ============================================================================
+// Variable Management Methods
+// ============================================================================
 
+void GeoTiffHandler::setVariable(const std::string& varName, int i, int j, const QVariant& value) {
+    if (i < 0 || i >= width_ || j < 0 || j >= height_) {
+        throw std::out_of_range("Cell indices out of range");
+    }
+
+    // Initialize variable array if it doesn't exist
+    if (variables_.find(varName) == variables_.end()) {
+        initializeVariable(varName);
+    }
+
+    variables_[varName][i][j] = value;
+}
+
+QVariant GeoTiffHandler::getVariable(const std::string& varName, int i, int j) const {
+    if (i < 0 || i >= width_ || j < 0 || j >= height_) {
+        throw std::out_of_range("Cell indices out of range");
+    }
+
+    auto it = variables_.find(varName);
+    if (it == variables_.end()) {
+        return QVariant(); // Return invalid QVariant
+    }
+
+    return it->second[i][j];
+}
+
+bool GeoTiffHandler::hasVariable(const std::string& varName) const {
+    return variables_.find(varName) != variables_.end();
+}
+
+void GeoTiffHandler::removeVariable(const std::string& varName) {
+    variables_.erase(varName);
+}
+
+std::vector<std::string> GeoTiffHandler::getVariableNames() const {
+    std::vector<std::string> names;
+    names.reserve(variables_.size());
+    for (const auto& pair : variables_) {
+        names.push_back(pair.first);
+    }
+    return names;
+}
+
+void GeoTiffHandler::initializeVariable(const std::string& varName, const QVariant& defaultValue) {
+    variables_[varName].assign(width_, std::vector<QVariant>(height_, defaultValue));
+}
+
+bool GeoTiffHandler::isVariableNumeric(const std::string& varName) const {
+    auto it = variables_.find(varName);
+    if (it == variables_.end()) {
+        return false;
+    }
+
+    const auto& varData = it->second;
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+            const QVariant& val = varData[i][j];
+            if (val.isValid() && !val.canConvert<double>()) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void GeoTiffHandler::saveVariableAsGeoTiff(const std::string& varName, const std::string& filename, double nodataValue) const {
+    // Check if variable exists
+    auto it = variables_.find(varName);
+    if (it == variables_.end()) {
+        throw std::runtime_error("Variable '" + varName + "' does not exist");
+    }
+
+    // Check if variable is numeric
+    if (!isVariableNumeric(varName)) {
+        throw std::invalid_argument("Variable '" + varName + "' contains non-numeric data types");
+    }
+
+    if (x_.empty() || y_.empty()) {
+        throw std::runtime_error("Coordinate arrays not initialized");
+    }
+
+    // Get GDAL driver for GeoTIFF
+    GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!driver) {
+        throw std::runtime_error("GTiff driver not available");
+    }
+
+    // Create output dataset
+    GDALDataset* outDs = driver->Create(
+        filename.c_str(),
+        width_, height_, 1,  // cols, rows, bands
+        GDT_Float64,         // Use double precision for variables
+        nullptr
+        );
+    if (!outDs) {
+        throw std::runtime_error("Failed to create output GeoTIFF: " + filename);
+    }
+
+    try {
+        // Construct geotransform
+        double gt[6] = {0};
+        gt[0] = x_.front() - 0.5 * dx_;  // top-left corner x
+        gt[1] = dx_;
+        gt[2] = 0.0;
+        gt[3] = y_.front() - 0.5 * dy_;  // top-left corner y
+        gt[4] = 0.0;
+        gt[5] = dy_;
+        outDs->SetGeoTransform(gt);
+
+        // Copy projection if available
+        if (dataset_) {
+            const char* proj = dataset_->GetProjectionRef();
+            if (proj && strlen(proj) > 0) {
+                outDs->SetProjection(proj);
+            }
+        }
+
+        // Convert variable data to double array
+        const auto& varData = it->second;
+        std::vector<double> buffer(width_ * height_);
+
+        for (int j = 0; j < height_; ++j) {
+            for (int i = 0; i < width_; ++i) {
+                const QVariant& val = varData[i][j];
+                if (val.isValid() && val.canConvert<double>()) {
+                    buffer[j * width_ + i] = val.toDouble();
+                } else {
+                    buffer[j * width_ + i] = nodataValue;
+                }
+            }
+        }
+
+        // Write data
+        GDALRasterBand* band = outDs->GetRasterBand(1);
+
+        // Set nodata value if it's not NaN
+        if (!std::isnan(nodataValue)) {
+            band->SetNoDataValue(nodataValue);
+        }
+
+        CPLErr err = band->RasterIO(GF_Write, 0, 0, width_, height_,
+                                    buffer.data(), width_, height_,
+                                    GDT_Float64, 0, 0);
+        if (err != CE_None) {
+            throw std::runtime_error("Error writing variable data to " + filename);
+        }
+
+        GDALClose(outDs);
+
+    } catch (...) {
+        GDALClose(outDs);
+        throw;
+    }
+}
+
+GeoTiffHandler GeoTiffHandler::closestPolylineRaster(const PolylineSet& polylineSet, double nodataValue) const {
+    if (x_.empty() || y_.empty()) {
+        throw std::runtime_error("Coordinate arrays not initialized");
+    }
+
+    if (polylineSet.empty()) {
+        throw std::runtime_error("PolylineSet is empty");
+    }
+
+    // Create output raster - copy all metadata from input
+    GeoTiffHandler out(*this);
+
+    // Process each pixel
+    for (int i = 0; i < width_; ++i) {
+        for (int j = 0; j < height_; ++j) {
+
+            qDebug() << "Now doing: " << QString::number(i) + "," + QString::number(j);
+            // Skip if original pixel is invalid
+            if (std::isnan(data_2d_[i][j])) {
+                out.data_2d_[i][j] = nodataValue;
+                out.data_[j * width_ + i] = static_cast<float>(nodataValue);
+                continue;
+            }
+
+            // Get pixel center coordinates
+            Point pixelPoint(x_[i], y_[j]);
+
+            // Find closest polyline
+            double minDistance = std::numeric_limits<double>::infinity();
+            size_t closestIndex = 0;
+
+            for (size_t p = 0; p < polylineSet.size(); ++p) {
+                double distance = polylineSet[p].distanceToPoint(pixelPoint);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = p;
+                }
+            }
+
+            // Store polyline index as double - ensure it's a valid number
+            double indexValue = static_cast<double>(closestIndex);
+            out.data_2d_[i][j] = indexValue;
+            out.data_[j * width_ + i] = static_cast<float>(indexValue);
+        }
+    }
+
+    return out;
+}
+
+// Add this diagnostic method to GeoTiffHandler
+void GeoTiffHandler::diagnoseGeoTiff(const std::string& filename) {
+    std::cout << "=== GDAL Diagnostic for: " << filename << " ===" << std::endl;
+
+    // Try to open with GDAL
+    GDALDataset* testDs = (GDALDataset*) GDALOpen(filename.c_str(), GA_ReadOnly);
+    if (!testDs) {
+        std::cout << "ERROR: GDAL cannot open the file!" << std::endl;
+        std::cout << "GDAL Error: " << CPLGetLastErrorMsg() << std::endl;
+        return;
+    }
+
+    std::cout << "GDAL can open the file successfully." << std::endl;
+    std::cout << "Driver: " << testDs->GetDriver()->GetDescription() << std::endl;
+
+    // Check if it's a valid GeoTIFF
+    if (strcmp(testDs->GetDriver()->GetDescription(), "GTiff") != 0) {
+        std::cout << "WARNING: Not recognized as GTiff format!" << std::endl;
+    }
+
+    GDALClose(testDs);
+    std::cout << "=== End Diagnostic ===" << std::endl;
+}
+
+
+
+std::pair<double, double> GeoTiffHandler::slopeAtBilinear(double xCoord, double yCoord) const {
+    if (x_.empty() || y_.empty()) {
+        return {std::nan(""), std::nan("")};
+    }
+
+    // Convert world coords to fractional indices
+    double col = (xCoord - x_.front()) / dx_;
+    double row = (yCoord - y_.front()) / dy_;
+
+    if (dy_ < 0) {
+        row = (yCoord - y_.front()) / dy_;
+    }
+
+    // Check bounds - return NaN if outside valid area
+    if (col < 0.5 || col >= width_-0.5 || row < 0.5 || row >= height_-0.5) {
+        return {std::nan(""), std::nan("")};
+    }
+
+    int i = static_cast<int>(std::floor(col));
+    int j = static_cast<int>(std::floor(row));
+
+    // Ensure we don't go out of bounds
+    i = std::max(0, std::min(i, width_-2));
+    j = std::max(0, std::min(j, height_-2));
+
+    double fx = col - i;
+    double fy = row - j;
+
+    // Get the four corner values
+    double z00 = data_2d_[i][j];
+    double z10 = data_2d_[i+1][j];
+    double z01 = data_2d_[i][j+1];
+    double z11 = data_2d_[i+1][j+1];
+
+    // Return NaN if any corner value is NaN
+    if (std::isnan(z00) || std::isnan(z10) || std::isnan(z01) || std::isnan(z11)) {
+        return {std::nan(""), std::nan("")};
+    }
+
+    // Calculate slopes using bilinear interpolation of partial derivatives
+    double dz_dx_bottom = (z10 - z00) / dx_;
+    double dz_dx_top = (z11 - z01) / dx_;
+    double dz_dx = dz_dx_bottom * (1 - fy) + dz_dx_top * fy;
+
+    double dz_dy_left = (z01 - z00) / dy_;
+    double dz_dy_right = (z11 - z10) / dy_;
+    double dz_dy = dz_dy_left * (1 - fx) + dz_dy_right * fx;
+
+    if (dy_ < 0) {
+        dz_dy = -dz_dy;
+    }
+
+    return {dz_dx, dz_dy};
+}

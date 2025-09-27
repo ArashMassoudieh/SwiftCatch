@@ -35,6 +35,7 @@ public slots:
     void on_ReadWeatherData();
     void on_Select_Area();
     void on_Load_Transportation_Layer();
+    void on_Find_Closest_Sewers();
 };
 
 enum class DialogMode { Open, Save };

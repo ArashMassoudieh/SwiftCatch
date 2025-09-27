@@ -40,6 +40,7 @@
     <addaction name="actionUniformize_Flow_and_Rain"/>
     <addaction name="actionRead_Weather_Data"/>
     <addaction name="actionLoad_Transportation_Layer"/>
+    <addaction name="actionGet_Closest_Sewer_Pipe"/>
     <addaction name="actionSelect_Area"/>
     <addaction name="separator"/>
    </widget>
@@ -84,6 +85,11 @@
   <action name="actionLoad_Transportation_Layer">
    <property name="text">
     <string>Load Transportation Layer</string>
+   </property>
+  </action>
+  <action name="actionGet_Closest_Sewer_Pipe">
+   <property name="text">
+    <string>Get Closest Sewer Pipe</string>
    </property>
   </action>
  </widget>

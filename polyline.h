@@ -84,6 +84,10 @@ public:
     void saveAsEnhancedGeoJSON(const QString& filename, int crsEPSG = 4326) const;
     void loadFromEnhancedGeoJSON(const QString& filename);
 
+    // Distance calculation methods (add to public section of Polyline class)
+    double distanceToPoint(const Point& point) const;
+    static double pointToLineSegmentDistance(const Point& point, const Point& lineStart, const Point& lineEnd);
+
     size_t size() const override { return Path::size(); }
     bool empty() const override { return Path::size() == 0; }
     std::pair<Point, Point> getBoundingBox() const override;
@@ -91,6 +95,15 @@ public:
     void saveAsGeoJSON(const QString& filename, int crsEPSG = 4326) const override;
     void loadFromGeoJSON(const QString& filename) override;
     std::string getGeometryType() const override;
+
+    /**
+     * @brief Calculate the centroid (center of mass) of the polyline.
+     * For a polyline, this is the weighted average position where each segment
+     * contributes according to its length.
+     * @return Point representing the centroid coordinates.
+     * @throw std::runtime_error if polyline has fewer than 2 points.
+     */
+    Point getCentroid() const;
 
 private:
     std::vector<EnhancedPoint> enhanced_points_;

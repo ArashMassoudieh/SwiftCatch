@@ -8,6 +8,9 @@
 #include <QFileDialog>
 #include <QWidget>
 #include "node.h"
+#include <QVariant>
+#include <map>
+#include "polylineset.h"
 
 /**
  * @class GeoTiffHandler
@@ -452,7 +455,84 @@ public:
      */
     std::vector<Node> nodes(const GeoTiffHandler* valueRaster = nullptr) const;
 
+    /** @name Variable Management */
+    ///@{
+    /**
+ * @brief Set a variable value for a specific cell.
+ * @param varName Variable name.
+ * @param i Column index.
+ * @param j Row index.
+ * @param value QVariant value to store.
+ */
+    void setVariable(const std::string& varName, int i, int j, const QVariant& value);
 
+    /**
+ * @brief Get a variable value from a specific cell.
+ * @param varName Variable name.
+ * @param i Column index.
+ * @param j Row index.
+ * @return QVariant value, or invalid QVariant if not found.
+ */
+    QVariant getVariable(const std::string& varName, int i, int j) const;
+
+    /**
+ * @brief Check if a variable exists.
+ * @param varName Variable name.
+ * @return True if variable exists.
+ */
+    bool hasVariable(const std::string& varName) const;
+
+    /**
+ * @brief Remove a variable completely.
+ * @param varName Variable name.
+ */
+    void removeVariable(const std::string& varName);
+
+    /**
+ * @brief Get all variable names.
+ * @return Vector of variable names.
+ */
+    std::vector<std::string> getVariableNames() const;
+
+    /**
+ * @brief Initialize a variable with default value for all cells.
+ * @param varName Variable name.
+ * @param defaultValue Default QVariant value.
+ */
+    void initializeVariable(const std::string& varName, const QVariant& defaultValue = QVariant());
+    ///@}
+
+
+    /**
+     * @brief Save a variable as a GeoTIFF file if the variable type is numeric.
+     * @param varName Variable name to export.
+     * @param filename Output GeoTIFF filename.
+     * @param nodataValue Value to use for invalid/non-numeric cells (default NaN).
+     * @throw std::runtime_error if variable doesn't exist or saving fails.
+     * @throw std::invalid_argument if variable contains non-numeric types.
+     */
+        void saveVariableAsGeoTiff(const std::string& varName, const std::string& filename, double nodataValue = std::nan("")) const;
+
+        /**
+     * @brief Check if a variable contains only numeric types.
+     * @param varName Variable name to check.
+     * @return True if all non-invalid QVariants in the variable can be converted to double.
+     */
+
+        /**
+     * @brief Create a raster where each pixel contains the index of the closest polyline.
+     * @param polylineSet PolylineSet containing polylines to measure distances to.
+     * @param nodataValue Value to assign to pixels where no distance can be calculated (default -1).
+     * @return New GeoTiffHandler with polyline indices as pixel values.
+     * @throw std::runtime_error if coordinate arrays are not initialized or polylineSet is empty.
+     */
+        GeoTiffHandler closestPolylineRaster(const PolylineSet& polylineSet, double nodataValue = -1.0) const;
+
+
+    static void diagnoseGeoTiff(const std::string& filename);
+    bool isVariableNumeric(const std::string& varName) const;
+
+    std::pair<double, double> slopeAtBilinear(double xCoord, double yCoord) const;
 
 
 private:
@@ -468,6 +548,8 @@ private:
     std::vector<double> y_;                     ///< Y coordinates of cell centers.
     double dx_;                                 ///< Cell size in x-direction.
     double dy_;                                 ///< Cell size in y-direction.
+
+    std::map<std::string, std::vector<std::vector<QVariant>>> variables_;  ///< Named variable arrays for each cell
 
 
 };

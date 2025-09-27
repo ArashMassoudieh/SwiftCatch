@@ -346,6 +346,9 @@ std::pair<Point, Point> Polyline::getBoundingBox() const {
     if (enhanced_points_.empty()) {
         return {Point(0.0, 0.0), Point(0.0, 0.0)};
     }
+// ============================================================================
+// Distance Calculation Methods
+// ============================================================================
 
     double minX = enhanced_points_[0].x;
     double minY = enhanced_points_[0].y;
@@ -374,5 +377,100 @@ void Polyline::loadFromGeoJSON(const QString& filename) {
 
 std::string Polyline::getGeometryType() const {
     return "LineString";
+}
+
+
+double Polyline::distanceToPoint(const Point& point) const {
+    if (enhanced_points_.empty()) {
+        return std::numeric_limits<double>::infinity();
+    }
+
+    if (enhanced_points_.size() == 1) {
+        // Single point - return Euclidean distance
+        const auto& p = enhanced_points_[0];
+        double dx = point.x - p.x;
+        double dy = point.y - p.y;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    double minDistance = std::numeric_limits<double>::infinity();
+
+    // Check distance to each line segment
+    for (size_t i = 0; i < enhanced_points_.size() - 1; ++i) {
+        Point p1(enhanced_points_[i].x, enhanced_points_[i].y);
+        Point p2(enhanced_points_[i + 1].x, enhanced_points_[i + 1].y);
+
+        double segmentDistance = pointToLineSegmentDistance(point, p1, p2);
+        minDistance = std::min(minDistance, segmentDistance);
+    }
+
+    return minDistance;
+}
+
+double Polyline::pointToLineSegmentDistance(const Point& point, const Point& lineStart, const Point& lineEnd) {
+    // Vector from line start to end
+    double dx = lineEnd.x - lineStart.x;
+    double dy = lineEnd.y - lineStart.y;
+
+    // If line segment is actually a point
+    if (dx == 0.0 && dy == 0.0) {
+        double pdx = point.x - lineStart.x;
+        double pdy = point.y - lineStart.y;
+        return std::sqrt(pdx * pdx + pdy * pdy);
+    }
+
+    // Parameter t represents position along line segment (0 = start, 1 = end)
+    double t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+
+    // Clamp t to [0, 1] to stay within line segment
+    t = std::max(0.0, std::min(1.0, t));
+
+    // Find closest point on line segment
+    double closestX = lineStart.x + t * dx;
+    double closestY = lineStart.y + t * dy;
+
+    // Return distance from point to closest point on segment
+    double distX = point.x - closestX;
+    double distY = point.y - closestY;
+    return std::sqrt(distX * distX + distY * distY);
+}
+
+Point Polyline::getCentroid() const {
+    if (enhanced_points_.size() < 2) {
+        throw std::runtime_error("Polyline must have at least 2 points to calculate centroid");
+    }
+
+    double totalLength = 0.0;
+    double weightedX = 0.0;
+    double weightedY = 0.0;
+
+    // Calculate centroid using segment-weighted approach
+    for (size_t i = 0; i < enhanced_points_.size() - 1; ++i) {
+        const auto& p1 = enhanced_points_[i];
+        const auto& p2 = enhanced_points_[i + 1];
+
+        // Calculate segment length
+        double dx = p2.x - p1.x;
+        double dy = p2.y - p1.y;
+        double segmentLength = std::sqrt(dx * dx + dy * dy);
+
+        if (segmentLength > 0.0) {
+            // Midpoint of this segment
+            double midX = (p1.x + p2.x) * 0.5;
+            double midY = (p1.y + p2.y) * 0.5;
+
+            // Weight by segment length
+            weightedX += midX * segmentLength;
+            weightedY += midY * segmentLength;
+            totalLength += segmentLength;
+        }
+    }
+
+    if (totalLength == 0.0) {
+        // All points are the same - return the first point
+        return Point(enhanced_points_[0].x, enhanced_points_[0].y);
+    }
+
+    return Point(weightedX / totalLength, weightedY / totalLength);
 }
 
