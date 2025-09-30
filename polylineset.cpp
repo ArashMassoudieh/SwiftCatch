@@ -14,10 +14,6 @@
 #include <ogrsf_frmts.h>
 #include <cpl_conv.h>
 #include <cpl_string.h>
-
-// Alternative GDAL includes for compatibility
-// Add this at the top of polylineset.cpp instead of the current GDAL includes
-
 #include <cpl_conv.h>  // for CPLMalloc()
 #include <cpl_string.h>
 #include <gdal_version.h>
@@ -69,6 +65,7 @@ void PolylineSet::clear() {
     polylines_.clear();
     numeric_attributes_.clear();
     string_attributes_.clear();
+    junctions_.clear();
 }
 
 // ============================================================================
@@ -1484,5 +1481,638 @@ void PolylineSet::calculateProjectedSlopes(const GeoTiffHandler* demPtr, const s
 
         // Store the result
         numeric_attributes_[i][attributeName] = projected_slope;
+    }
+}
+
+// Junction management methods
+const JunctionSet& PolylineSet::getJunctions() const {
+    return junctions_;
+}
+
+JunctionSet& PolylineSet::getJunctions() {
+    return junctions_;
+}
+
+void PolylineSet::clearJunctions() {
+    junctions_.clear();
+}
+
+int PolylineSet::getJunctionCount() const {
+    return junctions_.size();
+}
+
+// Main junction detection method
+void PolylineSet::findJunctions(double tolerance) {
+    QMap<QString, QVariant> emptyAttributes;
+    findJunctionsWithAttributes(tolerance, emptyAttributes);
+}
+
+void PolylineSet::findJunctionsWithAttributes(double tolerance, const QMap<QString, QVariant>& defaultAttributes) {
+    junctions_.clear();
+
+    if (polylines_.empty()) {
+        return;
+    }
+
+    // Collect all endpoints
+    QVector<QPair<QPointF, QPair<size_t, bool>>> endpoints; // point, (polyline_index, is_end)
+
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        const auto& polyline = polylines_[i];
+        if (polyline.size() >= 2) {
+            const auto& points = polyline.getEnhancedPoints();
+
+            // First point (beginning)
+            QPointF firstPoint(points.front().x, points.front().y);
+            endpoints.append({firstPoint, {i, false}});
+
+            // Last point (end)
+            QPointF lastPoint(points.back().x, points.back().y);
+            endpoints.append({lastPoint, {i, true}});
+        }
+    }
+
+    // Group endpoints that are within tolerance
+    QVector<bool> processed(endpoints.size(), false);
+
+    for (int i = 0; i < endpoints.size(); ++i) {
+        if (processed[i]) continue;
+
+        QVector<QPair<size_t, bool>> connectedPolylines; // (polyline_index, is_end)
+        QPointF junctionLocation = endpoints[i].first;
+        connectedPolylines.append(endpoints[i].second);
+        processed[i] = true;
+
+        // Find all other endpoints within tolerance
+        for (int j = i + 1; j < endpoints.size(); ++j) {
+            if (processed[j]) continue;
+
+            QPointF otherPoint = endpoints[j].first;
+            double distance = std::sqrt(std::pow(junctionLocation.x() - otherPoint.x(), 2) +
+                                        std::pow(junctionLocation.y() - otherPoint.y(), 2));
+
+            if (distance <= tolerance) {
+                connectedPolylines.append(endpoints[j].second);
+                processed[j] = true;
+
+                // Update junction location to centroid of all coincident points
+                junctionLocation = QPointF(
+                    (junctionLocation.x() * connectedPolylines.size() + otherPoint.x()) / (connectedPolylines.size() + 1),
+                    (junctionLocation.y() * connectedPolylines.size() + otherPoint.y()) / (connectedPolylines.size() + 1)
+                    );
+            }
+        }
+
+        if (connectedPolylines.size() > 0) {
+            Junction junction(junctionLocation, defaultAttributes);
+
+            // Add connected polylines (you'll need shared_ptr access to polylines)
+            for (const auto& connection : connectedPolylines) {
+                // Note: This assumes you have a way to get shared_ptr to polylines
+                // You might need to modify this based on your polyline storage
+                junction.addConnectedPolyline(std::make_shared<Polyline>(polylines_[connection.first]));
+            }
+
+            // Set additional attributes
+            junction.setIntAttribute("polyline_count", connectedPolylines.size());
+            junction.setStringAttribute("junction_type",
+                                        connectedPolylines.size()==1 ? "headwater" : (connectedPolylines.size() == 2 ? "connection" : "branch"));
+
+            junctions_.addJunction(std::move(junction));
+        }
+    }
+}
+
+// Analysis methods
+QVector<int> PolylineSet::getPolylinesConnectedToJunction(int junctionIndex) const {
+    if (junctionIndex < 0 || junctionIndex >= junctions_.size()) {
+        return QVector<int>();
+    }
+
+    QVector<int> connectedIndices;
+    const auto& connectedPolylines = junctions_[junctionIndex].getConnectedPolylines();
+
+    // This is a simplified version - you'd need to maintain proper mapping
+    // between shared_ptr<Polyline> and indices in your actual implementation
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        for (const auto& connectedPtr : connectedPolylines) {
+            // Compare polylines (you might need a better comparison method)
+            if (connectedPtr) {
+                connectedIndices.append(static_cast<int>(i));
+                break;
+            }
+        }
+    }
+
+    return connectedIndices;
+}
+
+QVector<int> PolylineSet::findJunctionsNearPolyline(int polylineIndex, double searchRadius) const {
+    validateIndex(polylineIndex);
+
+    QVector<int> nearbyJunctions;
+    const auto& polyline = polylines_[polylineIndex];
+
+    for (int i = 0; i < junctions_.size(); ++i) {
+        double distance = polyline.distanceToPoint(Point(junctions_[i].x(), junctions_[i].y()));
+        if (distance <= searchRadius) {
+            nearbyJunctions.append(i);
+        }
+    }
+
+    return nearbyJunctions;
+}
+
+// Export/Import wrapper methods
+void PolylineSet::saveJunctionsAsGeoJSON(const QString& filename, int crsEPSG) const {
+    junctions_.saveAsGeoJSON(filename, crsEPSG);
+}
+
+void PolylineSet::saveJunctionsAsShapefile(const QString& filename, int crsEPSG) const {
+    junctions_.saveAsShapefile(filename, crsEPSG);
+}
+
+void PolylineSet::loadJunctionsFromGeoJSON(const QString& filename) {
+    junctions_.loadFromGeoJSON(filename);
+}
+
+void PolylineSet::loadJunctionsFromShapefile(const QString& filename) {
+    junctions_.loadFromShapefile(filename);
+}
+
+void PolylineSet::assignElevationToJunctions(const GeoTiffHandler* demPtr, const QString& attributeName) {
+    junctions_.assignElevationToJunctions(demPtr, attributeName);
+}
+
+void PolylineSet::findJunctionsWithElevation(double tolerance,
+                                             const GeoTiffHandler* demPtr,
+                                             const QMap<QString, QVariant>& defaultAttributes) {
+    if (!demPtr) {
+        throw std::runtime_error("GeoTiffHandler pointer is null");
+    }
+
+    junctions_.clear();
+
+    if (polylines_.empty()) {
+        return;
+    }
+
+    // Collect all endpoints with polyline index and endpoint type
+    QVector<QPair<QPointF, QPair<size_t, bool>>> endpoints; // point, (polyline_index, is_end)
+
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        const auto& polyline = polylines_[i];
+        if (polyline.size() >= 2) {
+            const auto& points = polyline.getEnhancedPoints();
+
+            // First point (beginning)
+            QPointF firstPoint(points.front().x, points.front().y);
+            endpoints.append({firstPoint, {i, false}});
+
+            // Last point (end)
+            QPointF lastPoint(points.back().x, points.back().y);
+            endpoints.append({lastPoint, {i, true}});
+        }
+    }
+
+    // Group endpoints that are within tolerance
+    QVector<bool> processed(endpoints.size(), false);
+    int junctionId = 0;
+
+    for (int i = 0; i < endpoints.size(); ++i) {
+        if (processed[i]) continue;
+
+        QVector<QPair<size_t, bool>> connectedPolylines; // (polyline_index, is_end)
+        QPointF junctionLocation = endpoints[i].first;
+        connectedPolylines.append(endpoints[i].second);
+        processed[i] = true;
+
+        // Find all other endpoints within tolerance
+        for (int j = i + 1; j < endpoints.size(); ++j) {
+            if (processed[j]) continue;
+
+            QPointF otherPoint = endpoints[j].first;
+            double distance = std::sqrt(std::pow(junctionLocation.x() - otherPoint.x(), 2) +
+                                        std::pow(junctionLocation.y() - otherPoint.y(), 2));
+
+            if (distance <= tolerance) {
+                connectedPolylines.append(endpoints[j].second);
+                processed[j] = true;
+
+                // Update junction location to centroid of all coincident points
+                junctionLocation = QPointF(
+                    (junctionLocation.x() * connectedPolylines.size() + otherPoint.x()) / (connectedPolylines.size() + 1),
+                    (junctionLocation.y() * connectedPolylines.size() + otherPoint.y()) / (connectedPolylines.size() + 1)
+                    );
+            }
+        }
+
+        if (connectedPolylines.size() > 0) {
+            Junction junction(junctionLocation, defaultAttributes);
+
+            // Get elevation from DEM
+            double elevation = demPtr->valueAt(junctionLocation.x(), junctionLocation.y());
+            if (!std::isnan(elevation)) {
+                junction.setNumericAttribute("elevation", elevation);
+            }
+
+            // Set junction ID
+            junction.setIntAttribute("junction_id", junctionId);
+
+            // Add connected polylines
+            for (const auto& connection : connectedPolylines) {
+                junction.addConnectedPolyline(std::make_shared<Polyline>(polylines_[connection.first]));
+            }
+
+            // Set additional attributes
+            junction.setIntAttribute("polyline_count", connectedPolylines.size());
+            junction.setStringAttribute("junction_type",
+                                        connectedPolylines.size() == 1 ? "headwater" :
+                                            (connectedPolylines.size() == 2 ? "connection" : "branch"));
+
+            junctions_.addJunction(std::move(junction));
+
+            // Now assign upstream/downstream node IDs to connected polylines
+            for (const auto& connection : connectedPolylines) {
+                size_t polylineIndex = connection.first;
+                bool isEnd = connection.second;
+
+                if (isEnd) {
+                    // This junction is at the end of the polyline
+                    setPolylineStringAttribute(polylineIndex, "d_node",
+                                               QString::number(junctionId).toStdString());
+                } else {
+                    // This junction is at the beginning of the polyline
+                    setPolylineStringAttribute(polylineIndex, "u_node",
+                                               QString::number(junctionId).toStdString());
+                }
+            }
+
+            junctionId++;
+        }
+    }
+
+    // Now determine upstream/downstream based on elevation for polylines that have both nodes assigned
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        auto upstreamNodeStr = getPolylineStringAttribute(i, "u_node");
+        auto downstreamNodeStr = getPolylineStringAttribute(i, "d_node");
+
+        if (upstreamNodeStr && downstreamNodeStr) {
+            int node1Id = std::stoi(*upstreamNodeStr);
+            int node2Id = std::stoi(*downstreamNodeStr);
+
+            // Get elevations of both junctions
+            double elev1 = junctions_[node1Id].getNumericAttribute("elevation", std::nan(""));
+            double elev2 = junctions_[node2Id].getNumericAttribute("elevation", std::nan(""));
+
+            // If both elevations are valid, assign based on which is higher
+            if (!std::isnan(elev1) && !std::isnan(elev2)) {
+                if (elev1 < elev2) {
+                    // Node 1 is lower, so swap them
+                    setPolylineStringAttribute(i, "u_node", QString::number(node2Id).toStdString());
+                    setPolylineStringAttribute(i, "d_node", QString::number(node1Id).toStdString());
+                }
+                // Otherwise they're already correct (elev1 >= elev2)
+            }
+        }
+    }
+}
+
+// Add to polylineset.cpp:
+PolylineSet PolylineSet::filterByValidDEMCells(const GeoTiffHandler* demPtr, double junctionTolerance) const {
+    if (!demPtr) {
+        throw std::runtime_error("GeoTiffHandler pointer is null");
+    }
+
+    PolylineSet result;
+
+    // Filter polylines based on centroid validity
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        const auto& polyline = polylines_[i];
+
+        // Skip polylines with less than 2 points
+        if (polyline.size() < 2) {
+            continue;
+        }
+
+        // Calculate centroid
+        Point centroid;
+        try {
+            centroid = polyline.getCentroid();
+        } catch (const std::exception& e) {
+            // If centroid calculation fails, skip this polyline
+            continue;
+        }
+
+        // Check if centroid is on a valid DEM cell
+        double centroidElevation = demPtr->valueAt(centroid.x, centroid.y);
+
+        if (std::isnan(centroidElevation)) {
+            // Centroid is on null cell, skip this polyline
+            continue;
+        }
+
+        // Add valid polyline
+        result.addPolyline(polylines_[i]);
+
+        // Copy all attributes
+        size_t newIndex = result.size() - 1;
+        if (i < numeric_attributes_.size()) {
+            result.numeric_attributes_[newIndex] = numeric_attributes_[i];
+        }
+        if (i < string_attributes_.size()) {
+            result.string_attributes_[newIndex] = string_attributes_[i];
+        }
+    }
+
+    // Recreate junctions for the filtered polylines using elevation data
+    if (!result.empty()) {
+        result.findJunctionsWithElevation(junctionTolerance, demPtr);
+    }
+
+    return result;
+}
+
+JunctionSet PolylineSet::findSinkJunctions() {
+
+    recalculateFlowDirections();
+    JunctionSet sinks;
+
+    // Debug: Check if polylines have the attributes
+    //int polylinesWithUpstream = 0;
+    //int polylinesWithDownstream = 0;
+
+    /*for (size_t polyIdx = 0; polyIdx < polylines_.size(); ++polyIdx) {
+        auto upstreamNodeStr = getPolylineStringAttribute(polyIdx, "u_node");
+        auto downstreamNodeStr = getPolylineStringAttribute(polyIdx, "d_node");
+
+        if (upstreamNodeStr) {
+            polylinesWithUpstream++;
+            std::cout << "Polyline " << polyIdx << " upstream_node: " << *upstreamNodeStr << std::endl;
+        }
+        if (downstreamNodeStr) {
+            polylinesWithDownstream++;
+            std::cout << "Polyline " << polyIdx << " downstream_node: " << *downstreamNodeStr << std::endl;
+        }
+    }*/
+
+    //std::cout << "Polylines with upstream_node: " << polylinesWithUpstream << std::endl;
+    //std::cout << "Polylines with downstream_node: " << polylinesWithDownstream << std::endl;
+    //std::cout << "Total junctions: " << junctions_.size() << std::endl;
+
+    // Build a map of junction connections
+    QMap<int, QPair<int, int>> junctionConnections; // junction_id -> (upstream_count, downstream_count)
+
+    // Initialize all junction IDs
+    for (int i = 0; i < junctions_.size(); ++i) {
+        int junctionId = junctions_[i].getIntAttribute("junction_id", -1);
+        //std::cout << "Junction " << i << " has ID: " << junctionId << std::endl;
+        if (junctionId >= 0) {
+            junctionConnections[junctionId] = QPair<int, int>(0, 0);
+        }
+    }
+
+    // Count connections for each junction
+    for (size_t polyIdx = 0; polyIdx < polylines_.size(); ++polyIdx) {
+        auto upstreamNodeStr = getPolylineStringAttribute(polyIdx, "u_node");
+        auto downstreamNodeStr = getPolylineStringAttribute(polyIdx, "d_node");
+
+        if (upstreamNodeStr && upstreamNodeStr->length() > 0) {
+            try {
+                int upstreamId = std::stoi(*upstreamNodeStr);
+                if (junctionConnections.contains(upstreamId)) {
+                    junctionConnections[upstreamId].first++;
+                    //std::cout << "Junction " << upstreamId << " is upstream for polyline " << polyIdx << std::endl;
+                }
+            } catch (...) {
+                std::cout << "Failed to parse upstream_node: " << *upstreamNodeStr << std::endl;
+            }
+        }
+
+        if (downstreamNodeStr && downstreamNodeStr->length() > 0) {
+            try {
+                int downstreamId = std::stoi(*downstreamNodeStr);
+                if (junctionConnections.contains(downstreamId)) {
+                    junctionConnections[downstreamId].second++;
+                    //std::cout << "Junction " << downstreamId << " is downstream for polyline " << polyIdx << std::endl;
+                }
+            } catch (...) {
+                std::cout << "Failed to parse downstream_node: " << *downstreamNodeStr << std::endl;
+            }
+        }
+    }
+
+    // Find sinks
+    for (int i = 0; i < junctions_.size(); ++i) {
+        const auto& junction = junctions_[i];
+
+        double junctionElev = junction.getNumericAttribute("elevation", std::nan(""));
+        int junctionId = junction.getIntAttribute("junction_id", -1);
+
+        if (std::isnan(junctionElev) || junctionId < 0) {
+            continue;
+        }
+
+        if (junctionConnections.contains(junctionId)) {
+            int upstreamCount = junctionConnections[junctionId].first;
+            int downstreamCount = junctionConnections[junctionId].second;
+
+            //std::cout << "Junction " << junctionId << " - upstream: " << upstreamCount
+            //          << ", downstream: " << downstreamCount << std::endl;
+
+            if (downstreamCount > 0 && upstreamCount == 0) {
+                sinks.addJunction(junction);
+                //std::cout << "  -> Added as sink" << std::endl;
+            }
+        }
+    }
+
+    return sinks;
+}
+
+int PolylineSet::correctSinkJunctionElevations(double elevationOffset) {
+    // Find all sink junctions
+    JunctionSet sinks = findSinkJunctions();
+
+    if (sinks.isEmpty()) {
+        return 0; // No sinks to correct
+    }
+
+    int correctedCount = 0;
+
+    // For each sink junction, calculate new elevation
+    for (int sinkIdx = 0; sinkIdx < sinks.size(); ++sinkIdx) {
+        const auto& sinkJunction = sinks[sinkIdx];
+        int sinkJunctionId = sinkJunction.getIntAttribute("junction_id", -1);
+
+        if (sinkJunctionId < 0) {
+            continue;
+        }
+
+        QPointF sinkLocation = sinkJunction.getLocation();
+
+        // Find all polylines connected to this sink (as downstream)
+        std::vector<int> connectedJunctionIds;
+
+        for (size_t polyIdx = 0; polyIdx < polylines_.size(); ++polyIdx) {
+            auto downstreamNodeStr = getPolylineStringAttribute(polyIdx, "d_node");
+
+            if (downstreamNodeStr && std::stoi(*downstreamNodeStr) == sinkJunctionId) {
+                // This polyline flows into the sink
+                auto upstreamNodeStr = getPolylineStringAttribute(polyIdx, "u_node");
+                if (upstreamNodeStr) {
+                    connectedJunctionIds.push_back(std::stoi(*upstreamNodeStr));
+                }
+            }
+        }
+
+        if (connectedJunctionIds.empty()) {
+            continue; // No connected junctions found
+        }
+
+        // Calculate distance-weighted average elevation
+        double weightedElevSum = 0.0;
+        double totalWeight = 0.0;
+
+        for (int connectedId : connectedJunctionIds) {
+            if (connectedId < 0 || connectedId >= junctions_.size()) {
+                continue;
+            }
+
+            const auto& connectedJunction = junctions_[connectedId];
+            double connectedElev = connectedJunction.getNumericAttribute("elevation", std::nan(""));
+
+            if (std::isnan(connectedElev)) {
+                continue;
+            }
+
+            // Calculate distance from sink to connected junction
+            QPointF connectedLocation = connectedJunction.getLocation();
+            double distance = std::sqrt(
+                std::pow(sinkLocation.x() - connectedLocation.x(), 2) +
+                std::pow(sinkLocation.y() - connectedLocation.y(), 2)
+                );
+
+            // Avoid division by zero
+            if (distance < 1e-6) {
+                distance = 1e-6;
+            }
+
+            // Weight is inverse of distance (closer junctions have more influence)
+            double weight = 1.0 / distance;
+
+            weightedElevSum += connectedElev * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight > 0) {
+            double newElevation = weightedElevSum / totalWeight;
+
+            // Subtract the elevation offset to ensure it's lower than upstream nodes
+            newElevation += elevationOffset;
+
+            // Update the elevation in the actual junctions_ member
+            if (sinkJunctionId >= 0 && sinkJunctionId < junctions_.size()) {
+                double oldElevation = junctions_.getJunction(sinkJunctionId).getNumericAttribute("elevation", std::nan(""));
+                junctions_.getJunction(sinkJunctionId).setNumericAttribute("elevation", newElevation);
+                correctedCount++;
+
+                std::cout << "Corrected sink junction " << sinkJunctionId
+                          << " elevation from " << oldElevation
+                          << " to " << newElevation << std::endl;
+            }
+        }
+    }
+
+    return correctedCount;
+}
+
+// Add the iterative function in polylineset.cpp:
+void PolylineSet::iterativelyCorrectSinks(double elevationOffset, int maxIterations) {
+    std::cout << "Starting iterative sink correction with offset=" << elevationOffset
+              << ", max iterations=" << maxIterations << std::endl;
+
+    for (int iter = 0; iter < maxIterations; ++iter) {
+        JunctionSet sinksBefore = findSinkJunctions();
+        int sinkCount = sinksBefore.size();
+
+        std::cout << "\nIteration " << (iter + 1) << ": Found " << sinkCount << " sink junctions" << std::endl;
+
+        if (sinkCount == 0) {
+            std::cout << "SUCCESS: No more sinks to correct!" << std::endl;
+            break;
+        }
+
+        // Correct sink elevations
+        int correctedCount = correctSinkJunctionElevations(elevationOffset);
+        std::cout << "  Corrected " << correctedCount << " sink elevations" << std::endl;
+
+        if (correctedCount == 0) {
+            std::cout << "WARNING: No sinks could be corrected. Stopping iterations." << std::endl;
+            break;
+        }
+
+        // Recalculate flow directions based on new elevations
+        recalculateFlowDirections();
+        std::cout << "  Recalculated flow directions" << std::endl;
+
+        // Check if we've eliminated any sinks
+        JunctionSet sinksAfter = findSinkJunctions();
+        int newSinkCount = sinksAfter.size();
+
+        if (newSinkCount == sinkCount) {
+            std::cout << "WARNING: Sink count unchanged after correction. Stopping iterations." << std::endl;
+            break;
+        }
+
+        std::cout << "  Eliminated " << (sinkCount - newSinkCount) << " sinks" << std::endl;
+    }
+
+    JunctionSet finalSinks = findSinkJunctions();
+    std::cout << "\nFinal result: " << finalSinks.size() << " remaining sink junctions" << std::endl;
+}
+
+void PolylineSet::recalculateFlowDirections() {
+    // For each polyline, check the elevations of its endpoints and assign u_node/d_node
+    for (size_t i = 0; i < polylines_.size(); ++i) {
+        auto upstreamNodeStr = getPolylineStringAttribute(i, "u_node");
+        auto downstreamNodeStr = getPolylineStringAttribute(i, "d_node");
+
+        // Skip if polyline doesn't have both nodes assigned
+        if (!upstreamNodeStr || !downstreamNodeStr) {
+            continue;
+        }
+
+        int node1Id = std::stoi(*upstreamNodeStr);
+        int node2Id = std::stoi(*downstreamNodeStr);
+
+        // Validate junction IDs
+        if (node1Id < 0 || node1Id >= junctions_.size() ||
+            node2Id < 0 || node2Id >= junctions_.size()) {
+            continue;
+        }
+
+        // Get elevations of both junctions
+        double elev1 = junctions_[node1Id].getNumericAttribute("elevation", std::nan(""));
+        double elev2 = junctions_[node2Id].getNumericAttribute("elevation", std::nan(""));
+
+        // Skip if either elevation is invalid
+        if (std::isnan(elev1) || std::isnan(elev2)) {
+            continue;
+        }
+
+        // Assign higher elevation as upstream, lower as downstream
+        if (elev1 > elev2) {
+            // Current assignment is correct (node1 higher than node2)
+            // u_node should be node1, d_node should be node2
+            setPolylineStringAttribute(i, "u_node", QString::number(node1Id).toStdString());
+            setPolylineStringAttribute(i, "d_node", QString::number(node2Id).toStdString());
+        } else if (elev2 > elev1) {
+            // Need to swap (node2 higher than node1)
+            // u_node should be node2, d_node should be node1
+            setPolylineStringAttribute(i, "u_node", QString::number(node2Id).toStdString());
+            setPolylineStringAttribute(i, "d_node", QString::number(node1Id).toStdString());
+        }
+        // If elevations are equal, keep current assignment
     }
 }

@@ -14,6 +14,7 @@
 #include "polylineset.h"
 #include "geometrymapdialog.h"
 #include <memory>
+#include "mapwidget.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -29,6 +30,28 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionLoad_GeoTiff, SIGNAL(triggered()), this, SLOT(on_Load_GeoTIFF()));
     connect(ui->actionLoad_Transportation_Layer, &QAction::triggered, this, &MainWindow::on_Load_Transportation_Layer);
     connect(ui->actionGet_Closest_Sewer_Pipe, &QAction::triggered, this, &MainWindow::on_Find_Closest_Sewers);
+
+    // In your constructor or setup method:
+    MapWidget* mapWidget = new MapWidget(this);
+
+    // Connect to coordinate signals
+    connect(mapWidget, &MapWidget::coordinateClicked,
+            this, [this](double x, double y) {
+                // Use the coordinates (x=longitude, y=latitude)
+                qDebug() << "Clicked at:" << x << "," << y;
+
+                // You can now use these coordinates with your PolylineSet/JunctionSet
+                // For example, find nearest junction:
+                // QPointF clickPoint(x, y);
+                // int nearestJunction = yourPolylineSet.getJunctions().findNearestJunction(clickPoint);
+            });
+
+    // Set initial map position (optional)
+    mapWidget->setCenter(39.8, -98.6); // Latitude, Longitude
+    mapWidget->setZoomLevel(6);
+
+    // Add to your layout
+    ui->gridLayout->addWidget(mapWidget);
 
 }
 
@@ -195,11 +218,27 @@ void MainWindow::on_Find_Closest_Sewers()
         QFileInfo info(outputFileName);
         QString folderPath = info.absolutePath() + "/";
 
-        polylines.calculateProjectedSlopes(&inputRaster);
-
-        polylines.saveAsShapefile(folderPath + "Roads_with_projected_slopes.shp");
-
         polylines.exportNumericAttributesToCSV(folderPath + "Roads_with_projected_slopes.csv");
+
+        PolylineSet filtered = polylines.filterByValidDEMCells(&inputRaster,3);
+
+        filtered.calculateProjectedSlopes(&inputRaster);
+
+        filtered.saveAsShapefile(folderPath + "Roads_with_projected_slopes.shp");
+
+        filtered.saveJunctionsAsShapefile(folderPath + "Junctions.shp");
+
+        JunctionSet sinkNodes = filtered.findSinkJunctions();
+
+        sinkNodes.saveAsShapefile(folderPath + "SinkNodes.shp");
+
+        filtered.iterativelyCorrectSinks();
+
+        JunctionSet sinkNodes_corrected = filtered.findSinkJunctions();
+
+        sinkNodes_corrected.saveAsShapefile(folderPath + "SinkNodes_corrected.shp");
+
+
 
         return ;
 

@@ -1,7 +1,8 @@
-QT       += core gui widgets network charts
-
+QT       += core gui widgets network charts quick quickwidgets positioning location
 
 CONFIG += c++17
+
+CONFIG += qtquickcompiler
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -26,8 +27,11 @@ SOURCES += \
     geotiffhandler.cpp \
     hydrodownloader.cpp \
     hydrodownloaderdlg.cpp \
+    junction.cpp \
+    junctionset.cpp \
     main.cpp \
     mainwindow.cpp \
+    mapwidget.cpp \
     modelcreator.cpp \
     node.cpp \
     path.cpp \
@@ -59,7 +63,10 @@ HEADERS += \
     geotiffhandler.h \
     hydrodownloader.h \
     hydrodownloaderdlg.h \
+    junction.h \
+    junctionset.h \
     mainwindow.h \
+    mapwidget.h \
     modelcreator.h \
     node.h \
     path.h \
@@ -84,3 +91,6 @@ LIBS += -lgdal
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    MapView.qrc

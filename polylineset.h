@@ -10,6 +10,7 @@
 #include <functional>
 #include <geometrybase.h>
 #include <GeoDataSetInterface.h>
+#include "junctionset.h"
 
 // Forward declarations for GDAL
 class GDALDataset;
@@ -141,8 +142,43 @@ public:
      */
     void calculateProjectedSlopes(const GeoTiffHandler* demPtr, const std::string& attributeName = "projected_slope");
 
+    // Junction management
+    const JunctionSet& getJunctions() const;
+    JunctionSet& getJunctions();
+    void clearJunctions();
+
+    // Junction detection and population
+    void findJunctions(double tolerance = 1e-6);
+    void findJunctionsWithAttributes(double tolerance = 1e-6, const QMap<QString, QVariant>& defaultAttributes = QMap<QString, QVariant>());
+
+    // Junction analysis
+    int getJunctionCount() const;
+    QVector<int> getPolylinesConnectedToJunction(int junctionIndex) const;
+    QVector<int> findJunctionsNearPolyline(int polylineIndex, double searchRadius = 10.0) const;
+
+    // Junction export/import
+    void saveJunctionsAsGeoJSON(const QString& filename, int crsEPSG = 4326) const;
+    void saveJunctionsAsShapefile(const QString& filename, int crsEPSG = 4326) const;
+    void loadJunctionsFromGeoJSON(const QString& filename);
+    void loadJunctionsFromShapefile(const QString& filename);
+
+    void assignElevationToJunctions(const GeoTiffHandler* demPtr, const QString& attributeName = "elevation");
+
+    void findJunctionsWithElevation(double tolerance,
+                                    const GeoTiffHandler* demPtr,
+                                    const QMap<QString, QVariant>& defaultAttributes = QMap<QString, QVariant>());
+
+    PolylineSet filterByValidDEMCells(const GeoTiffHandler* demPtr, double junctionTolerance = 1e-6) const;
+
+    JunctionSet findSinkJunctions();
+
+    int correctSinkJunctionElevations(double elevationOffset = 0.01);
+    void iterativelyCorrectSinks(double elevationOffset = 0.01, int maxIterations = 100);
+    void recalculateFlowDirections();
+
 private:
     std::vector<Polyline> polylines_;
+    JunctionSet junctions_;
     std::vector<std::map<std::string, double>> numeric_attributes_;  // Per-polyline numeric attributes
     std::vector<std::map<std::string, std::string>> string_attributes_;  // Per-polyline string attributes
 
