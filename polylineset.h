@@ -176,6 +176,17 @@ public:
     void iterativelyCorrectSinks(double elevationOffset = 0.01, int maxIterations = 100);
     void recalculateFlowDirections();
 
+    PolylineSet traceAndCorrectDownstreamPath(int startJunctionId, double elevationOffset, int maxSteps = 10000);
+
+    void correctSinksByTopologicalTraversal(double elevationOffset, int maxIterations = 100);
+
+    int getHighestElevationJunction() const;
+    int getLowestElevationJunction() const;
+    std::vector<int> getJunctionsSortedByElevation(bool ascending = true) const;
+    std::pair<double, double> getElevationRange() const;
+
+    static PolylineSet fromPolyline(const Polyline& polyline);
+
 private:
     std::vector<Polyline> polylines_;
     JunctionSet junctions_;
@@ -196,6 +207,18 @@ private:
 
     double minDistanceToPoint(const Point& point) const;
     size_t findNearestPolyline(const Point& point) const;
+
+    struct JunctionGradient {
+        int downstreamJunctionId;
+        double gradient;
+        size_t polylineIndex;
+    };
+
+    std::vector<JunctionGradient> getDownstreamGradients(int junctionId) const;
+    std::optional<JunctionGradient> findSteepestDownstreamGradient(int junctionId) const;
+    bool isSink(int junctionId) const;
+    bool correctSinkByGradientAdjustment(int sinkJunctionId, double elevationOffset);
+
 };
 
 #endif // POLYLINESET_H

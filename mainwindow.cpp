@@ -174,19 +174,8 @@ void MainWindow::on_Find_Closest_Sewers()
             return; // User cancelled
         }
 
-        // Step 3: Get output file location
-        QString outputFileName = getFileNameWithExtension(
-            this,
-            "Save Closest Polyline Raster As",
-            "",
-            "GeoTIFF Files (*.tif *.tiff);;All Files (*)",
-            DialogMode::Save,
-            "tif"
-            );
-
-        if (outputFileName.isEmpty()) {
-            return; // User cancelled
-        }
+        QFileInfo info(shapeFileName);
+        QString folderPath = info.absolutePath() + "/";
 
         // Step 4: Load the input raster
         GeoTiffHandler inputRaster(demFileName.toStdString());
@@ -199,9 +188,9 @@ void MainWindow::on_Find_Closest_Sewers()
         GeoTiffHandler closestPolylineRaster = inputRaster.closestPolylineRaster(polylines, -1.0);
 
         // Step 7: Save the result
-        closestPolylineRaster.saveAs(outputFileName.toStdString());
+        closestPolylineRaster.saveAs(folderPath.toStdString() + "closest_areas.tif");
 
-        qDebug() << closestPolylineRaster.info(outputFileName);
+        qDebug() << closestPolylineRaster.info(folderPath + "closest_areas.tif");
 
                 // Optional: Show completion message
         QMessageBox::information(this, "Success",
@@ -209,14 +198,11 @@ void MainWindow::on_Find_Closest_Sewers()
                                          "Raster contains polyline indices (0-%2) where:\n"
                                          "- Each pixel value represents the index of the closest polyline\n"
                                          "- Value -1 indicates no data/invalid pixels")
-                                     .arg(outputFileName)
+                                     .arg(folderPath + "closest_areas.tif")
                                      .arg(polylines.size() - 1));
 
 
-        GeoTiffHandler::diagnoseGeoTiff(outputFileName.toStdString());
-
-        QFileInfo info(outputFileName);
-        QString folderPath = info.absolutePath() + "/";
+        GeoTiffHandler::diagnoseGeoTiff(folderPath.toStdString() + "closest_areas.tif");
 
         polylines.exportNumericAttributesToCSV(folderPath + "Roads_with_projected_slopes.csv");
 
@@ -232,14 +218,21 @@ void MainWindow::on_Find_Closest_Sewers()
 
         sinkNodes.saveAsShapefile(folderPath + "SinkNodes.shp");
 
-        filtered.iterativelyCorrectSinks();
+        int highestId = filtered.getHighestElevationJunction();
 
-        JunctionSet sinkNodes_corrected = filtered.findSinkJunctions();
+        PolylineSet pathfromhighesttooutlet = filtered.traceAndCorrectDownstreamPath(highestId,0.1);
 
-        sinkNodes_corrected.saveAsShapefile(folderPath + "SinkNodes_corrected.shp");
+        pathfromhighesttooutlet.saveAsShapefile(folderPath + "downstream_path.shp");
 
+        // Load it back to verify
+        PolylineSet loaded;
+        loaded.loadFromShapefile(folderPath + "downstream_path.shp");
+        std::cout << "Loaded shapefile has " << loaded.size() << " polylines" << std::endl;
+        std::cout << "Loaded polyline has " << loaded[0].size() << " points" << std::endl;
 
+        pathfromhighesttooutlet.saveAsShapefile(folderPath + "Pathfromhighesttooutlet.shp");
 
+        pathfromhighesttooutlet.saveJunctionsAsShapefile(folderPath + "path_junctions.shp");
         return ;
 
     } catch (const std::exception& e) {

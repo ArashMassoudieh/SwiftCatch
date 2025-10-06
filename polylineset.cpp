@@ -1717,7 +1717,7 @@ void PolylineSet::findJunctionsWithElevation(double tolerance,
             }
 
             // Set junction ID
-            junction.setIntAttribute("junction_id", junctionId);
+            junction.setIntAttribute("id", junctionId);
 
             // Add connected polylines
             for (const auto& connection : connectedPolylines) {
@@ -1726,7 +1726,7 @@ void PolylineSet::findJunctionsWithElevation(double tolerance,
 
             // Set additional attributes
             junction.setIntAttribute("polyline_count", connectedPolylines.size());
-            junction.setStringAttribute("junction_type",
+            junction.setStringAttribute("type",
                                         connectedPolylines.size() == 1 ? "headwater" :
                                             (connectedPolylines.size() == 2 ? "connection" : "branch"));
 
@@ -1865,7 +1865,7 @@ JunctionSet PolylineSet::findSinkJunctions() {
 
     // Initialize all junction IDs
     for (int i = 0; i < junctions_.size(); ++i) {
-        int junctionId = junctions_[i].getIntAttribute("junction_id", -1);
+        int junctionId = junctions_[i].getIntAttribute("id", -1);
         //std::cout << "Junction " << i << " has ID: " << junctionId << std::endl;
         if (junctionId >= 0) {
             junctionConnections[junctionId] = QPair<int, int>(0, 0);
@@ -1907,7 +1907,7 @@ JunctionSet PolylineSet::findSinkJunctions() {
         const auto& junction = junctions_[i];
 
         double junctionElev = junction.getNumericAttribute("elevation", std::nan(""));
-        int junctionId = junction.getIntAttribute("junction_id", -1);
+        int junctionId = junction.getIntAttribute("id", -1);
 
         if (std::isnan(junctionElev) || junctionId < 0) {
             continue;
@@ -1943,7 +1943,7 @@ int PolylineSet::correctSinkJunctionElevations(double elevationOffset) {
     // For each sink junction, calculate new elevation
     for (int sinkIdx = 0; sinkIdx < sinks.size(); ++sinkIdx) {
         const auto& sinkJunction = sinks[sinkIdx];
-        int sinkJunctionId = sinkJunction.getIntAttribute("junction_id", -1);
+        int sinkJunctionId = sinkJunction.getIntAttribute("id", -1);
 
         if (sinkJunctionId < 0) {
             continue;
@@ -2027,10 +2027,12 @@ int PolylineSet::correctSinkJunctionElevations(double elevationOffset) {
     return correctedCount;
 }
 
-// Add the iterative function in polylineset.cpp:
 void PolylineSet::iterativelyCorrectSinks(double elevationOffset, int maxIterations) {
     std::cout << "Starting iterative sink correction with offset=" << elevationOffset
               << ", max iterations=" << maxIterations << std::endl;
+
+    const int STAGNATION_WINDOW = 5; // Number of iterations to check for progress
+    std::vector<int> recentSinkCounts;
 
     for (int iter = 0; iter < maxIterations; ++iter) {
         JunctionSet sinksBefore = findSinkJunctions();
@@ -2041,6 +2043,30 @@ void PolylineSet::iterativelyCorrectSinks(double elevationOffset, int maxIterati
         if (sinkCount == 0) {
             std::cout << "SUCCESS: No more sinks to correct!" << std::endl;
             break;
+        }
+
+        // Track recent sink counts
+        recentSinkCounts.push_back(sinkCount);
+        if (recentSinkCounts.size() > STAGNATION_WINDOW) {
+            recentSinkCounts.erase(recentSinkCounts.begin());
+        }
+
+        // Check for stagnation: all recent counts are the same
+        if (recentSinkCounts.size() == STAGNATION_WINDOW) {
+            bool allSame = true;
+            int firstCount = recentSinkCounts[0];
+            for (int count : recentSinkCounts) {
+                if (count != firstCount) {
+                    allSame = false;
+                    break;
+                }
+            }
+
+            if (allSame) {
+                std::cout << "WARNING: No progress in last " << STAGNATION_WINDOW
+                          << " iterations. Stopping." << std::endl;
+                break;
+            }
         }
 
         // Correct sink elevations
@@ -2060,18 +2086,12 @@ void PolylineSet::iterativelyCorrectSinks(double elevationOffset, int maxIterati
         JunctionSet sinksAfter = findSinkJunctions();
         int newSinkCount = sinksAfter.size();
 
-        if (newSinkCount == sinkCount) {
-            std::cout << "WARNING: Sink count unchanged after correction. Stopping iterations." << std::endl;
-            break;
-        }
-
         std::cout << "  Eliminated " << (sinkCount - newSinkCount) << " sinks" << std::endl;
     }
 
     JunctionSet finalSinks = findSinkJunctions();
     std::cout << "\nFinal result: " << finalSinks.size() << " remaining sink junctions" << std::endl;
 }
-
 void PolylineSet::recalculateFlowDirections() {
     // For each polyline, check the elevations of its endpoints and assign u_node/d_node
     for (size_t i = 0; i < polylines_.size(); ++i) {
@@ -2115,4 +2135,420 @@ void PolylineSet::recalculateFlowDirections() {
         }
         // If elevations are equal, keep current assignment
     }
+}
+
+
+PolylineSet PolylineSet::traceAndCorrectDownstreamPath(int startJunctionId, double elevationOffset, int maxSteps) {
+    PolylineSet result;
+
+    if (startJunctionId < 0 || startJunctionId >= junctions_.size()) {
+        return result;
+    }
+
+    std::set<int> visitedJunctions;
+    int currentJunctionId = startJunctionId;
+    int previousJunctionId = -1;
+
+    for (int step = 0; step < maxSteps; ++step) {
+        if (visitedJunctions.count(currentJunctionId) > 0) {
+            std::cout << "Cycle detected at junction " << currentJunctionId << std::endl;
+
+            auto gradients = getDownstreamGradients(currentJunctionId);
+            bool foundAlternative = false;
+
+            std::sort(gradients.begin(), gradients.end(),
+                      [](const PolylineSet::JunctionGradient& a, const PolylineSet::JunctionGradient& b) {
+                          return a.gradient > b.gradient;
+                      });
+
+            for (const auto& grad : gradients) {
+                if (grad.gradient > 0 && visitedJunctions.count(grad.downstreamJunctionId) == 0) {
+                    std::cout << "  Found alternative path to junction " << grad.downstreamJunctionId
+                              << " (gradient: " << grad.gradient << ")" << std::endl;
+                    currentJunctionId = grad.downstreamJunctionId;
+                    foundAlternative = true;
+                    break;
+                }
+            }
+
+            if (!foundAlternative) {
+                std::cout << "  No alternative path available" << std::endl;
+                break;
+            }
+
+            continue;
+        }
+
+        visitedJunctions.insert(currentJunctionId);
+
+        // Get current junction
+        const auto& junction = junctions_[currentJunctionId];
+        QPointF location = junction.getLocation();
+        double elevation = junction.getNumericAttribute("elevation", std::nan(""));
+
+        // Add junction to result's junction set
+        Junction pathJunction(location);
+        pathJunction.setIntAttribute("id", currentJunctionId);
+        pathJunction.setIntAttribute("sequence", step);
+        if (!std::isnan(elevation)) {
+            pathJunction.setNumericAttribute("elevation", elevation);
+        }
+        result.getJunctions().addJunction(pathJunction);
+
+        // If we have a previous junction, create a segment polyline
+        if (previousJunctionId >= 0) {
+            const auto& prevJunction = junctions_[previousJunctionId];
+            QPointF prevLocation = prevJunction.getLocation();
+            double prevElevation = prevJunction.getNumericAttribute("elevation", std::nan(""));
+
+            // Create segment polyline
+            Polyline segment;
+            segment.addPoint(prevLocation.x(), prevLocation.y());
+            segment.addPoint(location.x(), location.y());
+
+            result.addPolyline(segment);
+
+            // Add attributes to the segment
+            size_t segmentIndex = result.size() - 1;
+            result.setPolylineStringAttribute(segmentIndex, "from_junc", std::to_string(previousJunctionId));
+            result.setPolylineStringAttribute(segmentIndex, "to_junc", std::to_string(currentJunctionId));
+            result.setPolylineStringAttribute(segmentIndex, "id", std::to_string(segmentIndex));
+
+            if (!std::isnan(prevElevation) && !std::isnan(elevation)) {
+                double elevChange = prevElevation - elevation;
+                result.setPolylineNumericAttribute(segmentIndex, "elev_drop", elevChange);
+
+                // Calculate distance and gradient
+                double dx = location.x() - prevLocation.x();
+                double dy = location.y() - prevLocation.y();
+                double distance = std::sqrt(dx * dx + dy * dy);
+
+                if (distance > 0) {
+                    result.setPolylineNumericAttribute(segmentIndex, "length", distance);
+                    result.setPolylineNumericAttribute(segmentIndex, "gradient", elevChange / distance);
+                }
+            }
+        }
+
+        previousJunctionId = currentJunctionId;
+
+        // Find steepest downstream gradient
+        auto steepest = findSteepestDownstreamGradient(currentJunctionId);
+
+        if (!steepest.has_value() || steepest->gradient <= 0) {
+            std::cout << "Sink found at junction " << currentJunctionId << ", correcting..." << std::endl;
+
+            bool corrected = correctSinkByGradientAdjustment(currentJunctionId, elevationOffset);
+
+            if (corrected) {
+                recalculateFlowDirections();
+                steepest = findSteepestDownstreamGradient(currentJunctionId);
+            }
+
+            if (!steepest.has_value() || steepest->gradient <= 0) {
+                std::cout << "Could not create valid downstream path. Path ends here." << std::endl;
+                break;
+            }
+        }
+
+        currentJunctionId = steepest->downstreamJunctionId;
+    }
+
+    std::cout << "Path traced with " << result.getJunctions().size() << " junctions and "
+              << result.size() << " segments" << std::endl;
+
+    return result;
+}
+
+
+// 1. Get all downstream junctions and their gradients from a given junction
+std::vector<PolylineSet::JunctionGradient> PolylineSet::getDownstreamGradients(int junctionId) const {
+    std::vector<JunctionGradient> gradients;
+
+    if (junctionId < 0 || junctionId >= junctions_.size()) {
+        return gradients;
+    }
+
+    double sourceElev = junctions_[junctionId].getNumericAttribute("elevation", std::nan(""));
+    if (std::isnan(sourceElev)) {
+        return gradients;
+    }
+
+    QPointF sourceLocation = junctions_[junctionId].getLocation();
+
+    // Find all polylines where this junction is the upstream node
+    for (size_t polyIdx = 0; polyIdx < polylines_.size(); ++polyIdx) {
+        auto upstreamNodeStr = getPolylineStringAttribute(polyIdx, "u_node");
+        if (!upstreamNodeStr || std::stoi(*upstreamNodeStr) != junctionId) {
+            continue;
+        }
+
+        auto downstreamNodeStr = getPolylineStringAttribute(polyIdx, "d_node");
+        if (!downstreamNodeStr) {
+            continue;
+        }
+
+        int downstreamId = std::stoi(*downstreamNodeStr);
+        if (downstreamId < 0 || downstreamId >= junctions_.size()) {
+            continue;
+        }
+
+        double downstreamElev = junctions_[downstreamId].getNumericAttribute("elevation", std::nan(""));
+        if (std::isnan(downstreamElev)) {
+            continue;
+        }
+
+        QPointF downstreamLocation = junctions_[downstreamId].getLocation();
+        double distance = std::sqrt(
+            std::pow(sourceLocation.x() - downstreamLocation.x(), 2) +
+            std::pow(sourceLocation.y() - downstreamLocation.y(), 2)
+            );
+
+        if (distance < 1e-6) {
+            distance = 1e-6;
+        }
+
+        // Gradient = elevation change / distance (positive = downhill)
+        double gradient = (sourceElev - downstreamElev) / distance;
+
+        JunctionGradient jg;
+        jg.downstreamJunctionId = downstreamId;
+        jg.gradient = gradient;
+        jg.polylineIndex = polyIdx;
+        gradients.push_back(jg);
+    }
+
+    return gradients;
+}
+
+// 2. Find the steepest downhill gradient
+std::optional<PolylineSet::JunctionGradient> PolylineSet::findSteepestDownstreamGradient(int junctionId) const {
+    auto gradients = getDownstreamGradients(junctionId);
+
+    if (gradients.empty()) {
+        return std::nullopt;
+    }
+
+    auto maxGradient = std::max_element(gradients.begin(), gradients.end(),
+                                        [](const JunctionGradient& a, const JunctionGradient& b) {
+                                            return a.gradient < b.gradient;
+                                        });
+
+    return *maxGradient;
+}
+
+// 3. Check if a junction is a sink (no positive downstream gradients)
+bool PolylineSet::isSink(int junctionId) const {
+    auto steepest = findSteepestDownstreamGradient(junctionId);
+
+    // If no downstream connections or all gradients are negative/uphill, it's a sink
+    return !steepest.has_value() || steepest->gradient <= 0;
+}
+
+// 4. Correct a single sink by adjusting elevations
+bool PolylineSet::correctSinkByGradientAdjustment(int sinkJunctionId, double elevationOffset) {
+    if (!isSink(sinkJunctionId)) {
+        return false;
+    }
+
+    // Find all UPSTREAM junctions (where sink is the downstream node)
+    std::vector<std::pair<int, double>> upstreamJunctions; // (junctionId, elevation)
+
+    double sinkElev = junctions_[sinkJunctionId].getNumericAttribute("elevation", std::nan(""));
+    if (std::isnan(sinkElev)) {
+        return false;
+    }
+
+    QPointF sinkLocation = junctions_[sinkJunctionId].getLocation();
+
+    for (size_t polyIdx = 0; polyIdx < polylines_.size(); ++polyIdx) {
+        auto downstreamNodeStr = getPolylineStringAttribute(polyIdx, "d_node");
+        if (!downstreamNodeStr || std::stoi(*downstreamNodeStr) != sinkJunctionId) {
+            continue;
+        }
+
+        auto upstreamNodeStr = getPolylineStringAttribute(polyIdx, "u_node");
+        if (!upstreamNodeStr) {
+            continue;
+        }
+
+        int upstreamId = std::stoi(*upstreamNodeStr);
+        if (upstreamId < 0 || upstreamId >= junctions_.size()) {
+            continue;
+        }
+
+        double upstreamElev = junctions_[upstreamId].getNumericAttribute("elevation", std::nan(""));
+        if (std::isnan(upstreamElev)) {
+            continue;
+        }
+
+        upstreamJunctions.push_back({upstreamId, upstreamElev});
+    }
+
+    if (upstreamJunctions.empty()) {
+        std::cout << "  No upstream junctions found for sink " << sinkJunctionId << std::endl;
+        return false;
+    }
+
+    // Find the upstream junction with LOWEST elevation
+    auto lowestUpstream = std::min_element(upstreamJunctions.begin(), upstreamJunctions.end(),
+                                           [](const auto& a, const auto& b) {
+                                               return a.second < b.second;
+                                           });
+
+    int targetUpstreamId = lowestUpstream->first;
+    double targetElev = lowestUpstream->second;
+
+    std::cout << "  Sink " << sinkJunctionId << " at " << sinkElev
+              << "m, lowest upstream " << targetUpstreamId << " at " << targetElev << "m" << std::endl;
+
+    // Calculate adjustment
+    double deltaZ = targetElev - sinkElev;
+    double adjustment = deltaZ / 2.0 + elevationOffset / 2.0;
+
+    double newSinkElev = sinkElev + 2*adjustment;
+    double newTargetElev = targetElev - 0*adjustment;
+
+    std::cout << "  Adjusting: sink " << sinkElev << " -> " << newSinkElev
+              << ", target " << targetElev << " -> " << newTargetElev << std::endl;
+
+    junctions_.getJunction(sinkJunctionId).setNumericAttribute("elevation", newSinkElev);
+    junctions_.getJunction(targetUpstreamId).setNumericAttribute("elevation", newTargetElev);
+
+    return true;
+}
+// 5. Main algorithm - traverse from highest to lowest
+void PolylineSet::correctSinksByTopologicalTraversal(double elevationOffset, int maxIterations) {
+    std::cout << "Starting topological sink correction with offset=" << elevationOffset << std::endl;
+
+    for (int iter = 0; iter < maxIterations; ++iter) {
+        // Sort junctions by elevation (highest first)
+        std::vector<int> junctionsByElevation;
+        for (int i = 0; i < junctions_.size(); ++i) {
+            double elev = junctions_[i].getNumericAttribute("elevation", std::nan(""));
+            if (!std::isnan(elev)) {
+                junctionsByElevation.push_back(i);
+            }
+        }
+
+        std::sort(junctionsByElevation.begin(), junctionsByElevation.end(),
+                  [this](int a, int b) {
+                      double elevA = junctions_[a].getNumericAttribute("elevation", std::nan(""));
+                      double elevB = junctions_[b].getNumericAttribute("elevation", std::nan(""));
+                      return elevA > elevB;
+                  });
+
+        // Process each junction from highest to lowest
+        int correctedCount = 0;
+        for (int junctionId : junctionsByElevation) {
+            if (isSink(junctionId)) {
+                if (correctSinkByGradientAdjustment(junctionId, elevationOffset)) {
+                    correctedCount++;
+                }
+            }
+        }
+
+        std::cout << "Iteration " << (iter + 1) << ": Corrected " << correctedCount << " sinks" << std::endl;
+
+        if (correctedCount == 0) {
+            std::cout << "No more sinks to correct." << std::endl;
+            break;
+        }
+    }
+
+    // Count remaining sinks
+    int remainingSinks = 0;
+    for (int i = 0; i < junctions_.size(); ++i) {
+        if (isSink(i)) {
+            remainingSinks++;
+        }
+    }
+
+    std::cout << "Final result: " << remainingSinks << " remaining sinks" << std::endl;
+}
+
+// Find junction with highest elevation
+int PolylineSet::getHighestElevationJunction() const {
+    if (junctions_.empty()) {
+        return -1;
+    }
+
+    int highestId = -1;
+    double maxElev = -std::numeric_limits<double>::infinity();
+
+    for (int i = 0; i < junctions_.size(); ++i) {
+        double elev = junctions_[i].getNumericAttribute("elevation", std::nan(""));
+
+        if (!std::isnan(elev) && elev > maxElev) {
+            maxElev = elev;
+            highestId = i;
+        }
+    }
+
+    return highestId;
+}
+
+// Find junction with lowest elevation
+int PolylineSet::getLowestElevationJunction() const {
+    if (junctions_.empty()) {
+        return -1;
+    }
+
+    int lowestId = -1;
+    double minElev = std::numeric_limits<double>::infinity();
+
+    for (int i = 0; i < junctions_.size(); ++i) {
+        double elev = junctions_[i].getNumericAttribute("elevation", std::nan(""));
+
+        if (!std::isnan(elev) && elev < minElev) {
+            minElev = elev;
+            lowestId = i;
+        }
+    }
+
+    return lowestId;
+}
+
+// Get all junctions sorted by elevation
+std::vector<int> PolylineSet::getJunctionsSortedByElevation(bool ascending) const {
+    std::vector<int> junctionIds;
+
+    for (int i = 0; i < junctions_.size(); ++i) {
+        double elev = junctions_[i].getNumericAttribute("elevation", std::nan(""));
+        if (!std::isnan(elev)) {
+            junctionIds.push_back(i);
+        }
+    }
+
+    std::sort(junctionIds.begin(), junctionIds.end(),
+              [this, ascending](int a, int b) {
+                  double elevA = junctions_[a].getNumericAttribute("elevation", std::nan(""));
+                  double elevB = junctions_[b].getNumericAttribute("elevation", std::nan(""));
+                  return ascending ? (elevA < elevB) : (elevA > elevB);
+              });
+
+    return junctionIds;
+}
+
+// Get elevation range in the network
+std::pair<double, double> PolylineSet::getElevationRange() const {
+    double minElev = std::numeric_limits<double>::infinity();
+    double maxElev = -std::numeric_limits<double>::infinity();
+
+    for (int i = 0; i < junctions_.size(); ++i) {
+        double elev = junctions_[i].getNumericAttribute("elevation", std::nan(""));
+
+        if (!std::isnan(elev)) {
+            minElev = std::min(minElev, elev);
+            maxElev = std::max(maxElev, elev);
+        }
+    }
+
+    return {minElev, maxElev};
+}
+
+PolylineSet PolylineSet::fromPolyline(const Polyline& polyline) {
+    PolylineSet set;
+    set.addPolyline(polyline);
+    return set;
 }
